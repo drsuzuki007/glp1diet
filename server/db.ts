@@ -5,6 +5,7 @@ import { ENV } from "./_core/env";
 import { ensureCatalogSeed } from "./seed";
 import { requireSubscriptionAccess, shouldApplyStripeEvent, StripeSubscriptionStatus, subscriptionAccessState } from "../shared/subscription";
 import { buildMonthlyLearningReport, mergeHistoricalProgressForReport } from "../shared/learningReport";
+import { buildRecommendations } from "../shared/recommendations";
 
 export const SUBSCRIPTION_PRICE_YEN = 980;
 
@@ -247,5 +248,6 @@ export async function getUserLibrary(userId: number) {
   ]);
   const access = subscriptionAccessState(subscription);
   const monthlyLearning = buildMonthlyLearningReport(mergeHistoricalProgressForReport(activityRows, progressRows.map(progress => ({ courseId: progress.id, durationMinutes: progress.durationMinutes, progressPercent: progress.progressPercent, completed: progress.completed, updatedAt: progress.updatedAt }))));
-  return { wishlist: wishlistRows, progress: progressRows, availableCourses: access.subscribed ? catalogRows : [], learningReport: monthlyLearning, ...access, monthlyPrice: SUBSCRIPTION_PRICE_YEN, subscription };
+  const recommendations = access.subscribed ? buildRecommendations(catalogRows, progressRows.map(progress => ({ id: progress.id, progressPercent: progress.progressPercent, completed: progress.completed }))) : [];
+  return { wishlist: wishlistRows, progress: progressRows, availableCourses: access.subscribed ? catalogRows : [], recommendations, learningReport: monthlyLearning, ...access, monthlyPrice: SUBSCRIPTION_PRICE_YEN, subscription };
 }
