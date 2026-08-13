@@ -286,6 +286,7 @@ export async function getUserLibrary(userId: number) {
   ]);
   const access = subscriptionAccessState(subscription);
   const monthlyLearning = buildMonthlyLearningReport(mergeHistoricalProgressForReport(activityRows, progressRows.map(progress => ({ courseId: progress.id, durationMinutes: progress.durationMinutes, progressPercent: progress.progressPercent, completed: progress.completed, updatedAt: progress.updatedAt }))));
-  const recommendations = access.subscribed ? buildRecommendations(catalogRows, progressRows.map(progress => ({ id: progress.id, progressPercent: progress.progressPercent, completed: progress.completed })), 3, learningGoalRows.map(item => item.goal)) : [];
+  const savedCourseIds = new Set(wishlistRows.map(course => course.id));
+  const recommendations = access.subscribed ? buildRecommendations(catalogRows, progressRows.map(progress => ({ id: progress.id, progressPercent: progress.progressPercent, completed: progress.completed })), 3, learningGoalRows.map(item => item.goal)).map(recommendation => ({ ...recommendation, wishlisted: savedCourseIds.has(recommendation.course.id) })) : [];
   return { wishlist: wishlistRows, progress: progressRows, availableCourses: access.subscribed ? catalogRows : [], recommendations, learningGoals: learningGoalRows, learningReport: monthlyLearning, ...access, monthlyPrice: SUBSCRIPTION_PRICE_YEN, subscription };
 }

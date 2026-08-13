@@ -1,18 +1,20 @@
 import { ArrowDown, ArrowUp, Bookmark, CirclePlay, Clock3, Crown, GraduationCap, LibraryBig, LockKeyhole, PlayCircle } from "lucide-react";
-import { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useSearch } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { startLogin } from "@/const";
 import CourseArtwork from "@/components/CourseArtwork";
+import RecommendationBookmarkButton from "@/components/RecommendationBookmarkButton";
 import SiteFrame from "@/components/SiteFrame";
 import { formatDate, formatYen, type CourseSummary } from "@/lib/course";
 import { trpc } from "@/lib/trpc";
 import type { MonthlyLearningMetric } from "@shared/learningReport";
 import { findLearningGoal, learningGoals, type LearningGoalValue } from "@shared/learningGoals";
+import { getWishlistedRecommendationIds, isWishlistedCourse, toggleWishlistCourseId } from "@shared/wishlist";
 import { toast } from "sonner";
 
 type LibraryCourse = CourseSummary & { savedAt?: Date; progressPercent?: number | null; completed?: boolean | null };
-type Recommendation = { course: CourseSummary; reason: string; kind: "continue" | "topic" | "explore" };
+type Recommendation = { course: CourseSummary; reason: string; kind: "continue" | "topic" | "explore"; wishlisted: boolean };
 
 const tabs = [
   { id: "wishlist", label: "マイリスト", Icon: Bookmark },
@@ -62,9 +64,37 @@ function LearningGoalSettings() {
   return <section className="learning-goal-panel" aria-label="学習目標の設定"><div className="learning-goal-panel__heading"><div><span className="eyebrow eyebrow--gold">YOUR LEARNING GOALS</span><h2>いま学びたいこと</h2><p>優先順位1の目標から順に、未視聴講座をおすすめの上位へ表示します。</p></div>{activeGoals.length > 0 && <div className="learning-goal-panel__status"><span className="learning-goal-panel__current">設定中：{activeGoals.map(goal => `${goal.priority}.${goal.label}`).join(" ・ ")}</span>{goalReorderPending && <small aria-live="polite">優先順位を保存中…</small>}{prioritySaved && !goalReorderPending && <small className="learning-goal-panel__saved" aria-live="polite">優先順位を保存しました</small>}</div>}</div><div className="learning-goal-options">{learningGoals.map(goal => { const activeGoal = activeGoals.find(item => item.value === goal.value); const active = Boolean(activeGoal); const currentIndex = activeGoals.findIndex(item => item.value === goal.value); return <div key={goal.value} className={`learning-goal-option ${active ? "is-active" : ""}`}><button type="button" className="learning-goal-option__select" onClick={() => active ? removeGoal.mutate(goal.value) : addGoal.mutate(goal.value)} disabled={goalSelectionPending} aria-pressed={active}>{active && <em>優先度 {activeGoal?.priority}</em>}<strong>{goal.label}</strong><span>{goal.description}</span>{active && <small>選択を解除</small>}</button>{active && <div className="learning-goal-option__controls" aria-label={`${goal.label}の優先順位を変更`}><button type="button" onClick={() => moveGoal(goal.value, -1)} disabled={goalReorderPending || currentIndex === 0} aria-label={`${goal.label}の優先順位を上げる`}><ArrowUp size={14} /></button><button type="button" onClick={() => moveGoal(goal.value, 1)} disabled={goalReorderPending || currentIndex === activeGoals.length - 1} aria-label={`${goal.label}の優先順位を下げる`}><ArrowDown size={14} /></button></div>}</div>; })}</div><p className="learning-goal-panel__note">複数選択できます。矢印で優先順位を変更できます。学習目標は教育コンテンツの表示順を調整するための設定であり、診断や治療方針を示すものではありません。</p></section>;
 }
 
-function RecommendationPanel({ recommendations }: { recommendations: Recommendation[] }) {
+export function RecommendationPanel({ recommendations }: { recommendations: Recommendation[] }) {
+  const utils = trpc.useUtils();
+  const [savedCourseIds, setSavedCourseIds] = useState<number[]>(() => getWishlistedRecommendationIds(recommendations.map(item => ({ courseId: item.course.id, wishlisted: item.wishlisted }))));
+  const savedCourseIdsRef = useRef(savedCourseIds);
+  useEffect(() => {
+    const restoredIds = getWishlistedRecommendationIds(recommendations.map(item => ({ courseId: item.course.id, wishlisted: item.wishlisted })));
+    savedCourseIdsRef.current = restoredIds;
+    setSavedCourseIds(restoredIds);
+  }, [recommendations]);
+  const toggleBookmark = trpc.catalog.toggleWishlist.useMutation({
+    onMutate: ({ courseId }) => {
+      const previousIds = savedCourseIdsRef.current;
+      const nextIds = toggleWishlistCourseId(previousIds, courseId);
+      savedCourseIdsRef.current = nextIds;
+      setSavedCourseIds(nextIds);
+      return { previousIds };
+    },
+    onSuccess: result => {
+      utils.library.mine.invalidate();
+      toast.success(result.wishlisted ? "後で見るに保存しました。" : "後で見るから削除しました。");
+    },
+    onError: (_error, _input, context) => {
+      if (context?.previousIds) {
+        savedCourseIdsRef.current = context.previousIds;
+        setSavedCourseIds(context.previousIds);
+      }
+      toast.error("後で見るを更新できませんでした。");
+    },
+  });
   const labels = { continue: "続きから学ぶ", topic: "目標に沿って学ぶ", explore: "新しいテーマ" } as const;
-  return <>{recommendations.length > 0 && <section className="recommendation-panel" aria-label="あなたへのおすすめ講座"><div className="recommendation-panel__heading"><div><span className="eyebrow eyebrow--gold">PERSONALIZED NEXT STEPS</span><h2>次に視聴するとよい講座</h2><p>学習目標、視聴履歴、完了講座の傾向から、まだ完了していない講座を提案しています。</p></div><span className="recommendation-panel__count">{recommendations.length}件の提案</span></div><div className="recommendation-grid">{recommendations.map(({ course, reason, kind }) => <Link key={course.id} href={`/courses/${course.slug}`} className="recommendation-card"><CourseArtwork theme={course.thumbnailTheme} category={course.category.name} title={course.title} compact /><div className="recommendation-card__body"><span className="recommendation-card__tag">{labels[kind]}</span><h3>{course.title}</h3><p className="recommendation-card__reason">{reason}</p><div className="recommendation-card__meta"><span>{course.category.name}</span><span>{course.durationMinutes}分</span><strong>視聴する</strong></div></div></Link>)}</div><p className="recommendation-panel__note">おすすめはご自身の保存済み視聴データと設定した学習目標だけを使用し、医療上の個別判断や診療の提案は行いません。</p></section>}</>;
+  return <>{recommendations.length > 0 && <section className="recommendation-panel" aria-label="あなたへのおすすめ講座"><div className="recommendation-panel__heading"><div><span className="eyebrow eyebrow--gold">PERSONALIZED NEXT STEPS</span><h2>次に視聴するとよい講座</h2><p>学習目標、視聴履歴、完了講座の傾向から、まだ完了していない講座を提案しています。</p></div><span className="recommendation-panel__count">{recommendations.length}件の提案</span></div><div className="recommendation-grid">{recommendations.map(({ course, reason, kind }) => { const wishlisted = isWishlistedCourse(savedCourseIds, course.id); return <article key={course.id} className="recommendation-card"><Link href={`/courses/${course.slug}`} className="recommendation-card__link"><CourseArtwork theme={course.thumbnailTheme} category={course.category.name} title={course.title} compact /><div className="recommendation-card__body"><span className="recommendation-card__tag">{labels[kind]}</span><h3>{course.title}</h3><p className="recommendation-card__reason">{reason}</p><div className="recommendation-card__meta"><span>{course.category.name}</span><span>{course.durationMinutes}分</span><strong>視聴する</strong></div></div></Link><RecommendationBookmarkButton wishlisted={wishlisted} isPending={toggleBookmark.isPending} onToggle={() => toggleBookmark.mutate({ courseId: course.id })} /></article>; })}</div><p className="recommendation-panel__note">おすすめはご自身の保存済み視聴データと設定した学習目標だけを使用し、医療上の個別判断や診療の提案は行いません。</p></section>}</>;
 }
 
 export default function MyPage() {
