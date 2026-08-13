@@ -50,6 +50,20 @@
       "when": 1786602978012,
       "tag": "0006_mysterious_virginia_dare",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1786604302642,
+      "tag": "0007_open_redwing",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "5",
+      "when": 1786604342933,
+      "tag": "0008_military_doctor_octopus",
+      "breakpoints": true
     }
   ]
 }

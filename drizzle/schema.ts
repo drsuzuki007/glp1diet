@@ -115,7 +115,7 @@ export const learningGoals = mysqlTable("learningGoals", {
   goal: mysqlEnum("goal", ["understand_glp1", "improve_lifestyle", "understand_checks", "prepare_for_visit"]).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, table => [uniqueIndex("learning_goal_user_unique").on(table.userId)]);
+}, table => [uniqueIndex("learning_goal_user_goal_unique").on(table.userId, table.goal)]);
 
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;

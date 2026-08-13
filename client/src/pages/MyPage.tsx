@@ -8,7 +8,7 @@ import SiteFrame from "@/components/SiteFrame";
 import { formatDate, formatYen, type CourseSummary } from "@/lib/course";
 import { trpc } from "@/lib/trpc";
 import type { MonthlyLearningMetric } from "@shared/learningReport";
-import { findLearningGoal, learningGoals, type LearningGoalValue } from "@shared/learningGoals";
+import { findLearningGoals, learningGoals, type LearningGoalValue } from "@shared/learningGoals";
 import { toast } from "sonner";
 
 type LibraryCourse = CourseSummary & { savedAt?: Date; progressPercent?: number | null; completed?: boolean | null };
@@ -46,9 +46,13 @@ function LearningReport({ monthly }: { monthly: MonthlyLearningMetric[] }) {
 function LearningGoalSettings() {
   const utils = trpc.useUtils();
   const goalQuery = trpc.learningGoal.mine.useQuery();
-  const updateGoal = trpc.learningGoal.set.useMutation({ onSuccess: () => { utils.learningGoal.mine.invalidate(); utils.library.mine.invalidate(); toast.success("学習目標を更新しました。おすすめを見直しています。"); }, onError: () => toast.error("学習目標を保存できませんでした。") });
-  const activeGoal = findLearningGoal(goalQuery.data as LearningGoalValue | null | undefined);
-  return <section className="learning-goal-panel" aria-label="学習目標の設定"><div className="learning-goal-panel__heading"><div><span className="eyebrow eyebrow--gold">YOUR LEARNING GOAL</span><h2>いま学びたいこと</h2><p>目標を選ぶと、そのテーマに沿った未視聴講座を優先して提案します。</p></div>{activeGoal && <span className="learning-goal-panel__current">設定中：{activeGoal.label}</span>}</div><div className="learning-goal-options">{learningGoals.map(goal => <button key={goal.value} type="button" className={activeGoal?.value === goal.value ? "is-active" : ""} onClick={() => updateGoal.mutate(goal.value)} disabled={updateGoal.isPending} aria-pressed={activeGoal?.value === goal.value}><strong>{goal.label}</strong><span>{goal.description}</span></button>)}</div><p className="learning-goal-panel__note">学習目標は教育コンテンツの表示順を調整するための設定であり、診断や治療方針を示すものではありません。</p></section>;
+  const refreshGoals = () => { utils.learningGoal.mine.invalidate(); utils.library.mine.invalidate(); };
+  const addGoal = trpc.learningGoal.add.useMutation({ onSuccess: () => { refreshGoals(); toast.success("学習目標を追加しました。おすすめを見直しています。"); }, onError: () => toast.error("学習目標を保存できませんでした。") });
+  const removeGoal = trpc.learningGoal.remove.useMutation({ onSuccess: () => { refreshGoals(); toast.success("学習目標を解除しました。おすすめを見直しています。"); }, onError: () => toast.error("学習目標を更新できませんでした。") });
+  const activeGoals = findLearningGoals(goalQuery.data as LearningGoalValue[] | null | undefined);
+  const activeGoalValues = new Set(activeGoals.map(goal => goal.value));
+  const changing = addGoal.isPending || removeGoal.isPending;
+  return <section className="learning-goal-panel" aria-label="学習目標の設定"><div className="learning-goal-panel__heading"><div><span className="eyebrow eyebrow--gold">YOUR LEARNING GOALS</span><h2>いま学びたいこと</h2><p>複数の目標を選ぶと、各テーマに沿った未視聴講座を優先して提案します。</p></div>{activeGoals.length > 0 && <span className="learning-goal-panel__current">設定中：{activeGoals.map(goal => goal.label).join("・")}</span>}</div><div className="learning-goal-options">{learningGoals.map(goal => { const active = activeGoalValues.has(goal.value); return <button key={goal.value} type="button" className={active ? "is-active" : ""} onClick={() => active ? removeGoal.mutate(goal.value) : addGoal.mutate(goal.value)} disabled={changing} aria-pressed={active}><strong>{goal.label}</strong><span>{goal.description}</span></button>; })}</div><p className="learning-goal-panel__note">複数選択できます。学習目標は教育コンテンツの表示順を調整するための設定であり、診断や治療方針を示すものではありません。</p></section>;
 }
 
 function RecommendationPanel({ recommendations }: { recommendations: Recommendation[] }) {

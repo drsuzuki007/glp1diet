@@ -10,3 +10,8 @@ export type LearningGoalValue = (typeof learningGoals)[number]["value"];
 export function findLearningGoal(value: LearningGoalValue | null | undefined) {
   return learningGoals.find(goal => goal.value === value) ?? null;
 }
+
+export function findLearningGoals(values: readonly LearningGoalValue[] | null | undefined) {
+  const selected = new Set(values ?? []);
+  return learningGoals.filter(goal => selected.has(goal.value));
+}
