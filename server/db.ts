@@ -1,8 +1,11 @@
 import { and, asc, desc, eq, gte, like, lte, or } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { categories, courses, doctors, InsertUser, purchases, users, viewingProgress, wishlists } from "../drizzle/schema";
+import { categories, courses, doctors, InsertUser, subscriptions, users, viewingProgress, wishlists } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 import { ensureCatalogSeed } from "./seed";
+import { requireSubscriptionAccess, subscriptionAccessState } from "../shared/subscription";
+
+export const SUBSCRIPTION_PRICE_YEN = 980;
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -22,7 +25,6 @@ export async function upsertUser(user: InsertUser): Promise<void> {
   if (!user.openId) throw new Error("User openId is required for upsert");
   const db = await getDb();
   if (!db) return;
-
   const values: InsertUser = { openId: user.openId, lastSignedIn: new Date() };
   const updateSet: Record<string, unknown> = { lastSignedIn: new Date() };
   (["name", "email", "loginMethod"] as const).forEach(field => {
@@ -51,11 +53,10 @@ export async function getUserByOpenId(openId: string) {
 export type CourseFilters = {
   search?: string;
   category?: string;
-  price?: "under1500" | "1500to3000" | "over3000";
   duration?: "under30" | "30to45" | "over45";
   doctor?: string;
   published?: "month" | "quarter" | "year";
-  sort?: "newest" | "priceAsc" | "priceDesc" | "duration";
+  sort?: "newest" | "duration";
 };
 
 const courseSelect = {
@@ -63,7 +64,6 @@ const courseSelect = {
   slug: courses.slug,
   title: courses.title,
   summary: courses.summary,
-  price: courses.price,
   durationMinutes: courses.durationMinutes,
   publishedAt: courses.publishedAt,
   reviewedAt: courses.reviewedAt,
@@ -81,6 +81,11 @@ async function readyDb() {
   return db;
 }
 
+async function activeSubscription(db: NonNullable<ReturnType<typeof drizzle>>, userId: number) {
+  const result = await db.select().from(subscriptions).where(and(eq(subscriptions.userId, userId), eq(subscriptions.status, "active"))).limit(1);
+  return result[0] ?? null;
+}
+
 export async function listCourses(filters: CourseFilters = {}) {
   const db = await readyDb();
   const conditions = [];
@@ -88,9 +93,6 @@ export async function listCourses(filters: CourseFilters = {}) {
   if (keyword) conditions.push(or(like(courses.title, `%${keyword}%`), like(courses.summary, `%${keyword}%`), like(categories.name, `%${keyword}%`), like(doctors.name, `%${keyword}%`))!);
   if (filters.category) conditions.push(eq(categories.slug, filters.category));
   if (filters.doctor) conditions.push(eq(doctors.slug, filters.doctor));
-  if (filters.price === "under1500") conditions.push(lte(courses.price, 1499));
-  if (filters.price === "1500to3000") conditions.push(and(gte(courses.price, 1500), lte(courses.price, 3000))!);
-  if (filters.price === "over3000") conditions.push(gte(courses.price, 3001));
   if (filters.duration === "under30") conditions.push(lte(courses.durationMinutes, 29));
   if (filters.duration === "30to45") conditions.push(and(gte(courses.durationMinutes, 30), lte(courses.durationMinutes, 45))!);
   if (filters.duration === "over45") conditions.push(gte(courses.durationMinutes, 46));
@@ -100,7 +102,7 @@ export async function listCourses(filters: CourseFilters = {}) {
     threshold.setDate(threshold.getDate() - days);
     conditions.push(gte(courses.publishedAt, threshold));
   }
-  const order = filters.sort === "priceAsc" ? asc(courses.price) : filters.sort === "priceDesc" ? desc(courses.price) : filters.sort === "duration" ? desc(courses.durationMinutes) : desc(courses.publishedAt);
+  const order = filters.sort === "duration" ? desc(courses.durationMinutes) : desc(courses.publishedAt);
   return db.select(courseSelect).from(courses).innerJoin(categories, eq(courses.categoryId, categories.id)).innerJoin(doctors, eq(courses.doctorId, doctors.id)).where(conditions.length ? and(...conditions) : undefined).orderBy(order);
 }
 
@@ -133,14 +135,32 @@ export async function getFeaturedCourse() {
   return result[0];
 }
 
+export async function getSubscriptionStatus(userId: number) {
+  const db = await readyDb();
+  const subscription = await activeSubscription(db, userId);
+  return { ...subscriptionAccessState(subscription), monthlyPrice: SUBSCRIPTION_PRICE_YEN, subscription };
+}
+
+export async function activateDemoSubscription(userId: number) {
+  const db = await readyDb();
+  const existing = await db.select().from(subscriptions).where(eq(subscriptions.userId, userId)).limit(1);
+  if (existing[0]?.status === "active") return { alreadySubscribed: true, monthlyPrice: SUBSCRIPTION_PRICE_YEN };
+  if (existing[0]) {
+    await db.update(subscriptions).set({ status: "active", monthlyPrice: SUBSCRIPTION_PRICE_YEN, renewedAt: new Date() }).where(eq(subscriptions.id, existing[0].id));
+  } else {
+    await db.insert(subscriptions).values({ userId, monthlyPrice: SUBSCRIPTION_PRICE_YEN });
+  }
+  return { alreadySubscribed: false, monthlyPrice: SUBSCRIPTION_PRICE_YEN };
+}
+
 export async function getCourseActions(userId: number, courseId: number) {
   const db = await readyDb();
-  const [wishlistRows, purchaseRows, progressRows] = await Promise.all([
+  const [wishlistRows, subscription, progressRows] = await Promise.all([
     db.select().from(wishlists).where(and(eq(wishlists.userId, userId), eq(wishlists.courseId, courseId))).limit(1),
-    db.select().from(purchases).where(and(eq(purchases.userId, userId), eq(purchases.courseId, courseId))).limit(1),
+    activeSubscription(db, userId),
     db.select().from(viewingProgress).where(and(eq(viewingProgress.userId, userId), eq(viewingProgress.courseId, courseId))).limit(1),
   ]);
-  return { wishlisted: wishlistRows.length > 0, purchased: purchaseRows.length > 0, progress: progressRows[0] ?? null };
+  return { wishlisted: wishlistRows.length > 0, ...subscriptionAccessState(subscription), monthlyPrice: SUBSCRIPTION_PRICE_YEN, progress: progressRows[0] ?? null };
 }
 
 export async function toggleWishlist(userId: number, courseId: number) {
@@ -154,18 +174,9 @@ export async function toggleWishlist(userId: number, courseId: number) {
   return { wishlisted: true };
 }
 
-export async function purchaseCourse(userId: number, courseId: number) {
-  const db = await readyDb();
-  const course = await db.select({ price: courses.price }).from(courses).where(eq(courses.id, courseId)).limit(1);
-  if (!course[0]) throw new Error("講座が見つかりません。");
-  const existing = await db.select().from(purchases).where(and(eq(purchases.userId, userId), eq(purchases.courseId, courseId))).limit(1);
-  if (existing[0]) return { alreadyPurchased: true };
-  await db.insert(purchases).values({ userId, courseId, priceAtPurchase: course[0].price });
-  return { alreadyPurchased: false };
-}
-
 export async function updateCourseProgress(userId: number, courseId: number, progressPercent: number, lastPositionSeconds: number) {
   const db = await readyDb();
+  requireSubscriptionAccess(await activeSubscription(db, userId));
   const normalized = Math.max(0, Math.min(100, Math.round(progressPercent)));
   const existing = await db.select().from(viewingProgress).where(and(eq(viewingProgress.userId, userId), eq(viewingProgress.courseId, courseId))).limit(1);
   if (existing[0]) {
@@ -178,7 +189,10 @@ export async function updateCourseProgress(userId: number, courseId: number, pro
 
 export async function getUserLibrary(userId: number) {
   const db = await readyDb();
-  const wishlistRows = await db.select({ ...courseSelect, savedAt: wishlists.createdAt }).from(wishlists).innerJoin(courses, eq(wishlists.courseId, courses.id)).innerJoin(categories, eq(courses.categoryId, categories.id)).innerJoin(doctors, eq(courses.doctorId, doctors.id)).where(eq(wishlists.userId, userId)).orderBy(desc(wishlists.createdAt));
-  const purchaseRows = await db.select({ ...courseSelect, purchasedAt: purchases.purchasedAt, priceAtPurchase: purchases.priceAtPurchase, progressPercent: viewingProgress.progressPercent, completed: viewingProgress.completed }).from(purchases).innerJoin(courses, eq(purchases.courseId, courses.id)).innerJoin(categories, eq(courses.categoryId, categories.id)).innerJoin(doctors, eq(courses.doctorId, doctors.id)).leftJoin(viewingProgress, and(eq(viewingProgress.courseId, courses.id), eq(viewingProgress.userId, purchases.userId))).where(eq(purchases.userId, userId)).orderBy(desc(purchases.purchasedAt));
-  return { wishlist: wishlistRows, purchases: purchaseRows };
+  const [wishlistRows, progressRows, subscription] = await Promise.all([
+    db.select({ ...courseSelect, savedAt: wishlists.createdAt }).from(wishlists).innerJoin(courses, eq(wishlists.courseId, courses.id)).innerJoin(categories, eq(courses.categoryId, categories.id)).innerJoin(doctors, eq(courses.doctorId, doctors.id)).where(eq(wishlists.userId, userId)).orderBy(desc(wishlists.createdAt)),
+    db.select({ ...courseSelect, progressPercent: viewingProgress.progressPercent, lastPositionSeconds: viewingProgress.lastPositionSeconds, completed: viewingProgress.completed, updatedAt: viewingProgress.updatedAt }).from(viewingProgress).innerJoin(courses, eq(viewingProgress.courseId, courses.id)).innerJoin(categories, eq(courses.categoryId, categories.id)).innerJoin(doctors, eq(courses.doctorId, doctors.id)).where(eq(viewingProgress.userId, userId)).orderBy(desc(viewingProgress.updatedAt)),
+    activeSubscription(db, userId),
+  ]);
+  return { wishlist: wishlistRows, progress: progressRows, ...subscriptionAccessState(subscription), monthlyPrice: SUBSCRIPTION_PRICE_YEN, subscription };
 }

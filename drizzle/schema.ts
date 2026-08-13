@@ -12,6 +12,16 @@ export const users = mysqlTable("users", {
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
 });
 
+export const subscriptions = mysqlTable("subscriptions", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().references(() => users.id),
+  status: mysqlEnum("status", ["active", "cancelled"]).default("active").notNull(),
+  monthlyPrice: int("monthlyPrice").default(980).notNull(),
+  startedAt: timestamp("startedAt").defaultNow().notNull(),
+  renewedAt: timestamp("renewedAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, table => [uniqueIndex("subscription_user_unique").on(table.userId)]);
+
 export const categories = mysqlTable("categories", {
   id: int("id").autoincrement().primaryKey(),
   slug: varchar("slug", { length: 64 }).notNull().unique(),
@@ -86,3 +96,4 @@ export type InsertUser = typeof users.$inferInsert;
 export type Category = typeof categories.$inferSelect;
 export type Doctor = typeof doctors.$inferSelect;
 export type Course = typeof courses.$inferSelect;
+export type Subscription = typeof subscriptions.$inferSelect;

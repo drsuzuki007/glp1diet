@@ -6,25 +6,23 @@ describe("courseFilterSchema", () => {
     const parsed = courseFilterSchema.parse({
       search: "GLP-1",
       category: "glp1-basics",
-      price: "1500to3000",
       duration: "30to45",
       doctor: "risa-okada",
       published: "quarter",
-      sort: "priceAsc",
+      sort: "duration",
     });
 
     expect(parsed).toMatchObject({
       search: "GLP-1",
       category: "glp1-basics",
-      price: "1500to3000",
       duration: "30to45",
       doctor: "risa-okada",
       published: "quarter",
-      sort: "priceAsc",
+      sort: "duration",
     });
   });
 
   it("rejects unsupported filter values", () => {
-    expect(() => courseFilterSchema.parse({ price: "free", sort: "popular" })).toThrow();
+    expect(() => courseFilterSchema.parse({ duration: "short", sort: "popular" })).toThrow();
   });
 });

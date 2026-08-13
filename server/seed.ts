@@ -9,10 +9,10 @@ const categorySeed = [
 ];
 
 const doctorSeed = [
-  { slug: "risa-okada", name: "岡田 莉沙 医師", specialty: "内分泌・代謝内科", affiliation: "MediVista 医療教育センター", initials: "RO", profile: "内分泌・代謝領域の診療と、一般の方に向けた医療リテラシー教育に携わっています。個別の治療を勧めるのではなく、医師との対話に役立つ基礎知識をわかりやすく整理します。" },
-  { slug: "haruto-kamiya", name: "神谷 陽斗 医師", specialty: "糖尿病・生活習慣病内科", affiliation: "MediVista 医療教育センター", initials: "HK", profile: "糖尿病と生活習慣病の診療経験をもとに、日常の選択を支える中立的な医療教育を行っています。自己判断を避け、必要なときに医療機関へ相談するための視点を大切にしています。" },
-  { slug: "mio-takase", name: "高瀬 澪 医師", specialty: "総合診療・予防医療", affiliation: "MediVista 医療教育センター", initials: "MT", profile: "予防医療と健康診断後の相談を中心に、生活背景をふまえた情報整理を支援しています。講座では特定の方法を一律に推奨せず、続けやすさを考える視点を紹介します。" },
-  { slug: "seiji-nomura", name: "野村 誠司 医師", specialty: "循環器内科", affiliation: "MediVista 医療教育センター", initials: "SN", profile: "循環器疾患の予防と慢性疾患管理に携わっています。検査や治療の情報を受け取る際に、確認したいポイントを一般の方向けに解説します。" },
+  { slug: "risa-okada", name: "岡田 莉沙 医師", specialty: "内分泌・代謝内科", affiliation: "glp1.diet 医療教育センター", initials: "RO", profile: "内分泌・代謝領域の診療と、一般の方に向けた医療リテラシー教育に携わっています。個別の治療を勧めるのではなく、医師との対話に役立つ基礎知識をわかりやすく整理します。" },
+  { slug: "haruto-kamiya", name: "神谷 陽斗 医師", specialty: "糖尿病・生活習慣病内科", affiliation: "glp1.diet 医療教育センター", initials: "HK", profile: "糖尿病と生活習慣病の診療経験をもとに、日常の選択を支える中立的な医療教育を行っています。自己判断を避け、必要なときに医療機関へ相談するための視点を大切にしています。" },
+  { slug: "mio-takase", name: "高瀬 澪 医師", specialty: "総合診療・予防医療", affiliation: "glp1.diet 医療教育センター", initials: "MT", profile: "予防医療と健康診断後の相談を中心に、生活背景をふまえた情報整理を支援しています。講座では特定の方法を一律に推奨せず、続けやすさを考える視点を紹介します。" },
+  { slug: "seiji-nomura", name: "野村 誠司 医師", specialty: "循環器内科", affiliation: "glp1.diet 医療教育センター", initials: "SN", profile: "循環器疾患の予防と慢性疾患管理に携わっています。検査や治療の情報を受け取る際に、確認したいポイントを一般の方向けに解説します。" },
 ];
 
 const courseSeed = [

@@ -5,13 +5,14 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import {
+  activateDemoSubscription,
   getCatalogFilters,
   getCourseActions,
   getCourseBySlug,
   getFeaturedCourse,
+  getSubscriptionStatus,
   getUserLibrary,
   listCourses,
-  purchaseCourse,
   toggleWishlist,
   updateCourseProgress,
 } from "./db";
@@ -19,11 +20,10 @@ import {
 export const courseFilterSchema = z.object({
   search: z.string().trim().max(120).optional(),
   category: z.string().max(64).optional(),
-  price: z.enum(["under1500", "1500to3000", "over3000"]).optional(),
   duration: z.enum(["under30", "30to45", "over45"]).optional(),
   doctor: z.string().max(64).optional(),
   published: z.enum(["month", "quarter", "year"]).optional(),
-  sort: z.enum(["newest", "priceAsc", "priceDesc", "duration"]).optional(),
+  sort: z.enum(["newest", "duration"]).optional(),
 });
 
 export const appRouter = router({
@@ -51,8 +51,11 @@ export const appRouter = router({
     }),
     actions: protectedProcedure.input(z.object({ courseId: z.number().int().positive() })).query(({ ctx, input }) => getCourseActions(ctx.user.id, input.courseId)),
     toggleWishlist: protectedProcedure.input(z.object({ courseId: z.number().int().positive() })).mutation(({ ctx, input }) => toggleWishlist(ctx.user.id, input.courseId)),
-    demoPurchase: protectedProcedure.input(z.object({ courseId: z.number().int().positive() })).mutation(({ ctx, input }) => purchaseCourse(ctx.user.id, input.courseId)),
     updateProgress: protectedProcedure.input(z.object({ courseId: z.number().int().positive(), progressPercent: z.number().min(0).max(100), lastPositionSeconds: z.number().int().min(0) })).mutation(({ ctx, input }) => updateCourseProgress(ctx.user.id, input.courseId, input.progressPercent, input.lastPositionSeconds)),
+  }),
+  subscription: router({
+    mine: protectedProcedure.query(({ ctx }) => getSubscriptionStatus(ctx.user.id)),
+    activateDemo: protectedProcedure.mutation(({ ctx }) => activateDemoSubscription(ctx.user.id)),
   }),
   library: router({
     mine: protectedProcedure.query(({ ctx }) => getUserLibrary(ctx.user.id)),

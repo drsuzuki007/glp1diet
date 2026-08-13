@@ -3,7 +3,7 @@ import { Link } from "wouter";
 import CourseArtwork from "@/components/CourseArtwork";
 import CourseCard from "@/components/CourseCard";
 import SiteFrame from "@/components/SiteFrame";
-import { formatDate, formatYen, type CourseSummary } from "@/lib/course";
+import { formatDate, type CourseSummary } from "@/lib/course";
 import { trpc } from "@/lib/trpc";
 
 function SectionHeader({ label, title, text, href = "/catalog" }: { label: string; title: string; text: string; href?: string }) {
@@ -34,7 +34,7 @@ export default function Home() {
             <span className="eyebrow eyebrow--aqua">{featured.category.name} ・ {featured.durationMinutes}分</span>
             <h1>{featured.title}</h1>
             <p className="hero__summary">{featured.summary}</p>
-            <div className="hero__byline"><span>{featured.doctor.name}</span><strong>{formatYen(featured.price)}</strong><small>税込・買い切り視聴権</small></div>
+            <div className="hero__byline"><span>{featured.doctor.name}</span><strong>月額¥980</strong><small>税込・全講座見放題</small></div>
             <div className="hero__actions"><Link href={`/courses/${featured.slug}`} className="button-primary"><CirclePlay size={18} />詳細・無料プレビュー</Link><Link href="/catalog" className="button-secondary"><Compass size={18} />講座を探す</Link></div>
             <p className="hero__disclaimer">本講座は一般向け教育情報です。個別診療、処方、効果保証を行うものではありません。</p>
           </> : <div className="hero__loading"><span className="eyebrow">MEDICAL EDUCATION</span><h1>医療情報を、<br />確かな理解へ。</h1><p>医師制作・監修の一般向け動画講座を準備しています。</p></div>}
@@ -44,7 +44,7 @@ export default function Home() {
       <div className="container trust-row">
         <article><BadgeCheck size={21} /><div><strong>医師制作・監修</strong><span>制作医師、医学レビュー日、参考文献を明示</span></div></article>
         <article><ShieldCheck size={21} /><div><strong>一般向け医療教育</strong><span>診療・治療の指示と誤認させない安全設計</span></div></article>
-        <article><BookOpenText size={21} /><div><strong>何度でも視聴</strong><span>購入後はマイページから繰り返し学習</span></div></article>
+        <article><BookOpenText size={21} /><div><strong>何度でも視聴</strong><span>加入中はマイページから繰り返し学習</span></div></article>
       </div>
     </section>
 
@@ -58,6 +58,6 @@ export default function Home() {
 
     <section className="section section--warm"><div className="container"><SectionHeader label="PREPARE FOR A VISIT" title="受診前に知っておきたいこと" text="医療機関での相談に備える" href="/catalog?category=care-prep" /><CourseStrip courses={careCourses as CourseSummary[]} /></div></section>
 
-    <section className="preview-callout"><div className="container preview-callout__inner"><div><span className="eyebrow eyebrow--aqua">LEARN WITH CONFIDENCE</span><h2>まずは無料プレビューから</h2><p>ログイン前でも、各講座の概要と無料プレビューを確認できます。購入前に対象者、学習目標、参考文献、COIをご確認ください。</p></div><Link href="/catalog" className="button-primary">全講座を見る <ArrowRight size={18} /></Link></div><HeartPulse className="preview-callout__icon" aria-hidden="true" /></section>
+    <section className="preview-callout"><div className="container preview-callout__inner"><div><span className="eyebrow eyebrow--aqua">LEARN WITH CONFIDENCE</span><h2>まずは無料プレビューから</h2><p>ログイン前でも、各講座の概要と無料プレビューを確認できます。加入前に対象者、学習目標、参考文献、COIをご確認ください。</p></div><Link href="/catalog" className="button-primary">全講座を見る <ArrowRight size={18} /></Link></div><HeartPulse className="preview-callout__icon" aria-hidden="true" /></section>
   </SiteFrame>;
 }

@@ -3,7 +3,6 @@ export type CourseSummary = {
   slug: string;
   title: string;
   summary: string;
-  price: number;
   durationMinutes: number;
   publishedAt: Date;
   reviewedAt: Date;

@@ -2,7 +2,6 @@ import { ArrowUpRight, Clock3, UserRound } from "lucide-react";
 import { Link } from "wouter";
 import CourseArtwork from "./CourseArtwork";
 import type { CourseSummary } from "@/lib/course";
-import { formatYen } from "@/lib/course";
 
 export default function CourseCard({ course, featured = false }: { course: CourseSummary; featured?: boolean }) {
   return (
@@ -18,7 +17,6 @@ export default function CourseCard({ course, featured = false }: { course: Cours
         <div className="course-card__meta">
           <span><UserRound size={13} />{course.doctor.name}</span>
           <span><Clock3 size={13} />{course.durationMinutes}分</span>
-          <strong>{formatYen(course.price)}</strong>
         </div>
       </div>
     </Link>

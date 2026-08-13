@@ -19,3 +19,15 @@ The player saved the current playback position through the protected progress mu
 The authenticated browser then navigated to the purchases tab. The first capture showed its normal loading state with zero-valued counters before the protected library query completed; the subsequent settled-state check is used for the persisted-data result.
 
 Once settled, the my page showed one wishlist item, one purchase, and one in-progress course. The purchase tab contained `続けやすい食習慣の整え方` with its demo purchase date and price. The progress tab showed the same course at 10%, confirming the persisted wishlist, purchase, and playback-state data are read back into the corresponding tabs.
+
+After the subscription migration, the `glp1-foundations` detail page displayed the glp1.diet identity and a single `月額¥980で加入` call to action. The course sidebar now states `全講座見放題 ¥980（税込）/ 月`; individual course prices and single-course checkout wording are absent from the detail flow.
+
+In an authenticated session, the month-to-month enrollment dialog showed a single monthly total of ¥980 and explicitly stated that the current operation is a no-charge demo. The protected activation request was started from this confirmation state; the settled-state check follows after the server response.
+
+The activation completed successfully: course-level calls to action changed from joining to `視聴を開始する` and `この講座を視聴する`. The settled my-page content reported `ACTIVE SUBSCRIPTION` and `加入中`, confirming that a single subscription grants access without individual course purchases.
+
+The subscription was also applied to a different course, `heart-kidney-health`, whose detail page offered `視聴を開始する` and `この講座を視聴する` without a second enrollment prompt. The shared header now uses `加入状況` in place of the retired purchase-history navigation label.
+
+For that second course, the protected learning player opened and returned a video ready state of 4, an 8-second duration, a non-zero playback position, and `paused: false`. This verifies that the active subscription permits actual player playback for a course that was not individually purchased.
+
+The second course's progress-save control completed and returned to `現在の視聴位置を保存する` with a non-zero progress percentage displayed in the active player. This confirms that progress persistence is permitted by the subscription access path.

@@ -9,14 +9,13 @@ import { trpc } from "@/lib/trpc";
 type CatalogForm = {
   search: string;
   category: string;
-  price: "" | "under1500" | "1500to3000" | "over3000";
   duration: "" | "under30" | "30to45" | "over45";
   doctor: string;
   published: "" | "month" | "quarter" | "year";
-  sort: "newest" | "priceAsc" | "priceDesc" | "duration";
+  sort: "newest" | "duration";
 };
 
-const emptyForm: CatalogForm = { search: "", category: "", price: "", duration: "", doctor: "", published: "", sort: "newest" };
+const emptyForm: CatalogForm = { search: "", category: "", duration: "", doctor: "", published: "", sort: "newest" };
 
 function getFormFromSearch(value: string): CatalogForm {
   const params = new URLSearchParams(value);
@@ -30,7 +29,6 @@ export default function Catalog() {
   const courseQueryInput = useMemo(() => ({
     search: filters.search || undefined,
     category: filters.category || undefined,
-    price: filters.price || undefined,
     duration: filters.duration || undefined,
     doctor: filters.doctor || undefined,
     published: filters.published || undefined,
@@ -56,11 +54,10 @@ export default function Catalog() {
         <label className="catalog-search"><Search size={19} /><input name="search" value={filters.search} onChange={update} placeholder="タイトル、講師名、テーマから検索" /></label>
         <div className="filter-grid">
           <label><span>カテゴリ</span><select name="category" value={filters.category} onChange={update}><option value="">すべてのカテゴリ</option>{filtersQuery.data?.categories.map(category => <option key={category.slug} value={category.slug}>{category.name}</option>)}</select></label>
-          <label><span>価格</span><select name="price" value={filters.price} onChange={update}><option value="">すべての価格</option><option value="under1500">¥1,500未満</option><option value="1500to3000">¥1,500〜¥3,000</option><option value="over3000">¥3,000超</option></select></label>
           <label><span>再生時間</span><select name="duration" value={filters.duration} onChange={update}><option value="">すべての再生時間</option><option value="under30">30分未満</option><option value="30to45">30〜45分</option><option value="over45">45分超</option></select></label>
           <label><span>制作医師</span><select name="doctor" value={filters.doctor} onChange={update}><option value="">すべての制作医師</option>{filtersQuery.data?.doctors.map(doctor => <option key={doctor.slug} value={doctor.slug}>{doctor.name}</option>)}</select></label>
           <label><span>公開日</span><select name="published" value={filters.published} onChange={update}><option value="">すべての公開日</option><option value="month">過去1か月</option><option value="quarter">過去3か月</option><option value="year">過去1年</option></select></label>
-          <label><span>並べ替え</span><select name="sort" value={filters.sort} onChange={update}><option value="newest">新着順</option><option value="priceAsc">価格が低い順</option><option value="priceDesc">価格が高い順</option><option value="duration">再生時間が長い順</option></select></label>
+          <label><span>並べ替え</span><select name="sort" value={filters.sort} onChange={update}><option value="newest">新着順</option><option value="duration">再生時間が長い順</option></select></label>
         </div>
       </div>
       <div className="catalog-results-bar"><p><strong>{coursesQuery.data?.length ?? "—"}</strong> 件の講座</p>{hasFilters && <button onClick={reset} className="reset-button"><FilterX size={15} />条件をリセット</button>}</div>
