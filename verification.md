@@ -49,3 +49,11 @@ After adding Stripe event-time protection, returning with `billing=updated` agai
 The expanded My Page dashboard was checked in development-only state previews. In the unsubscribed view, the dashboard showed `未加入`, `0講座`, and no all-access video section. In the active-subscription view, it showed the next billing date, `10講座`, every playable course card, and saved viewing percentages on courses with progress.
 
 The actual Stripe-synchronized cancellation-pending state was also checked at `/mypage?billing=updated`. It displayed `解約予定`, the September 13, 2026 viewing deadline, 10 playable courses, and per-course progress links, demonstrating that all-access content remains visible through the paid period.
+
+For the monthly report verification, the active subscription route for `glp1-foundations` displayed both `視聴を開始する` and `この講座を視聴する`, confirming an eligible course can generate a real saved-playback event for report aggregation.
+
+Saving the current playback position created one `learningActivities` row with a one-second measured playback event. After aggregation, the My Page report displayed `0.1分` for the current month, `直近6か月 0.1分`, and `学習継続 記録中`, confirming that even a brief actual playback event is visible in the monthly report rather than being rounded away.
+
+The report now supplements granular events with pre-existing saved progress when a course has no detailed activity history. On the verified user account, two earlier saved progress records and the current granular event produced `40.4分` for the current month and the six-month total, replacing the earlier incorrect zero display. The aggregation unit test also verifies that a historical completed course contributes one completion without duplicating courses that already have granular events.
+
+For an end-to-end completion check, the learner advanced `lab-values-guide` to the final frame and saved its 100% position. The report then showed `40.5分` for the current month and six-month total, `今月の視聴完了 1講座`, and `完了 1` beside the August bar. This confirms that a real completed viewing event updates both the summary and chart annotation.

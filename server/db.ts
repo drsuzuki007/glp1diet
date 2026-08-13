@@ -1,9 +1,10 @@
 import { and, asc, desc, eq, gte, inArray, like, lte, or } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { categories, courses, doctors, InsertUser, subscriptions, users, viewingProgress, wishlists } from "../drizzle/schema";
+import { categories, courses, doctors, InsertUser, learningActivities, subscriptions, users, viewingProgress, wishlists } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 import { ensureCatalogSeed } from "./seed";
 import { requireSubscriptionAccess, shouldApplyStripeEvent, StripeSubscriptionStatus, subscriptionAccessState } from "../shared/subscription";
+import { buildMonthlyLearningReport, mergeHistoricalProgressForReport } from "../shared/learningReport";
 
 export const SUBSCRIPTION_PRICE_YEN = 980;
 
@@ -218,22 +219,33 @@ export async function updateCourseProgress(userId: number, courseId: number, pro
   requireSubscriptionAccess(await activeSubscription(db, userId));
   const normalized = Math.max(0, Math.min(100, Math.round(progressPercent)));
   const existing = await db.select().from(viewingProgress).where(and(eq(viewingProgress.userId, userId), eq(viewingProgress.courseId, courseId))).limit(1);
+  const previousPosition = existing[0]?.lastPositionSeconds ?? 0;
+  const watchedSeconds = Math.max(0, Math.round(lastPositionSeconds) - previousPosition);
+  const completedNow = normalized >= 100 && !existing[0]?.completed;
   if (existing[0]) {
     await db.update(viewingProgress).set({ progressPercent: normalized, lastPositionSeconds, completed: normalized >= 100 }).where(eq(viewingProgress.id, existing[0].id));
   } else {
     await db.insert(viewingProgress).values({ userId, courseId, progressPercent: normalized, lastPositionSeconds, completed: normalized >= 100 });
+  }
+  if (watchedSeconds > 0 || completedNow) {
+    await db.insert(learningActivities).values({ userId, courseId, watchedSeconds, completed: completedNow });
   }
   return { progressPercent: normalized };
 }
 
 export async function getUserLibrary(userId: number) {
   const db = await readyDb();
-  const [wishlistRows, progressRows, subscription, catalogRows] = await Promise.all([
+  const sixMonthsAgo = new Date();
+  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 5, 1);
+  sixMonthsAgo.setHours(0, 0, 0, 0);
+  const [wishlistRows, progressRows, subscription, catalogRows, activityRows] = await Promise.all([
     db.select({ ...courseSelect, savedAt: wishlists.createdAt }).from(wishlists).innerJoin(courses, eq(wishlists.courseId, courses.id)).innerJoin(categories, eq(courses.categoryId, categories.id)).innerJoin(doctors, eq(courses.doctorId, doctors.id)).where(eq(wishlists.userId, userId)).orderBy(desc(wishlists.createdAt)),
     db.select({ ...courseSelect, progressPercent: viewingProgress.progressPercent, lastPositionSeconds: viewingProgress.lastPositionSeconds, completed: viewingProgress.completed, updatedAt: viewingProgress.updatedAt }).from(viewingProgress).innerJoin(courses, eq(viewingProgress.courseId, courses.id)).innerJoin(categories, eq(courses.categoryId, categories.id)).innerJoin(doctors, eq(courses.doctorId, doctors.id)).where(eq(viewingProgress.userId, userId)).orderBy(desc(viewingProgress.updatedAt)),
     subscriptionByUser(db, userId),
     db.select(courseSelect).from(courses).innerJoin(categories, eq(courses.categoryId, categories.id)).innerJoin(doctors, eq(courses.doctorId, doctors.id)).orderBy(desc(courses.publishedAt)),
+    db.select({ courseId: learningActivities.courseId, recordedAt: learningActivities.recordedAt, watchedSeconds: learningActivities.watchedSeconds, completed: learningActivities.completed }).from(learningActivities).where(and(eq(learningActivities.userId, userId), gte(learningActivities.recordedAt, sixMonthsAgo))),
   ]);
   const access = subscriptionAccessState(subscription);
-  return { wishlist: wishlistRows, progress: progressRows, availableCourses: access.subscribed ? catalogRows : [], ...access, monthlyPrice: SUBSCRIPTION_PRICE_YEN, subscription };
+  const monthlyLearning = buildMonthlyLearningReport(mergeHistoricalProgressForReport(activityRows, progressRows.map(progress => ({ courseId: progress.id, durationMinutes: progress.durationMinutes, progressPercent: progress.progressPercent, completed: progress.completed, updatedAt: progress.updatedAt }))));
+  return { wishlist: wishlistRows, progress: progressRows, availableCourses: access.subscribed ? catalogRows : [], learningReport: monthlyLearning, ...access, monthlyPrice: SUBSCRIPTION_PRICE_YEN, subscription };
 }

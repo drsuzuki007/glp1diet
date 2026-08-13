@@ -1,4 +1,4 @@
-import { boolean, int, mysqlEnum, mysqlTable, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/mysql-core";
+import { boolean, index, int, mysqlEnum, mysqlTable, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/mysql-core";
 
 export const users = mysqlTable("users", {
   id: int("id").autoincrement().primaryKey(),
@@ -97,6 +97,16 @@ export const viewingProgress = mysqlTable("viewingProgress", {
   completed: boolean("completed").default(false).notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 }, table => [uniqueIndex("progress_user_course_unique").on(table.userId, table.courseId)]);
+
+/** Immutable playback-save events used only for a learner's own monthly report. */
+export const learningActivities = mysqlTable("learningActivities", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().references(() => users.id),
+  courseId: int("courseId").notNull().references(() => courses.id),
+  watchedSeconds: int("watchedSeconds").default(0).notNull(),
+  completed: boolean("completed").default(false).notNull(),
+  recordedAt: timestamp("recordedAt").defaultNow().notNull(),
+}, table => [index("learning_activity_user_recorded_idx").on(table.userId, table.recordedAt)]);
 
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
