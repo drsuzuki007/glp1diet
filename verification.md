@@ -31,3 +31,17 @@ The subscription was also applied to a different course, `heart-kidney-health`, 
 For that second course, the protected learning player opened and returned a video ready state of 4, an 8-second duration, a non-zero playback position, and `paused: false`. This verifies that the active subscription permits actual player playback for a course that was not individually purchased.
 
 The second course's progress-save control completed and returned to `現在の視聴位置を保存する` with a non-zero progress percentage displayed in the active player. This confirms that progress persistence is permitted by the subscription access path.
+
+Stripe Sandbox Checkout created a monthly `glp1.diet 全講座見放題` subscription for ¥980, using Stripe's hosted card form and the approved `4242 4242 4242 4242` test card. After completion, the app returned to `/mypage?checkout=success` and displayed the authenticated `請求・解約を管理` control, confirming that the Stripe Checkout completion and webhook-driven entitlement update activated the account.
+
+The Stripe Billing Portal session URL was generated successfully for the active Stripe customer. Returning to a course detail page after the test payment displayed `視聴を開始する` and `この講座を視聴する`, confirming that Stripe-backed entitlement permits the protected learning flow.
+
+The protected player opened after the Stripe test subscription and reported a video ready state of 4, an 8-second duration, a non-zero playback position, and `paused: false`. This confirms that the actual Stripe-backed subscription is applied to the playback entitlement, not only to the page label.
+
+The Stripe Sandbox Billing Portal completed the approved period-end cancellation reservation. Stripe displayed `Cancels Sep 13` and confirmed that service remains available through September 13, 2026, while offering a `Don't cancel subscription` reactivation option. This verifies the expected rule: cancellation stops renewal while retaining access through the paid period.
+
+After the cancellation event, the app refreshed the Stripe subscription on return from the Billing Portal. The My Page banner now displays `解約予定のサブスクリプション` and `解約予定日：2026/9/13。この日までは全講座を視聴できます。`, confirming item-level period-end extraction, scheduled-cancellation recognition, and entitlement retention through the paid period.
+
+Following the scheduled cancellation, a separate course detail route still displayed `視聴を開始する` and `この講座を視聴する`. This confirms that period-end cancellation continues to grant all-course playback access through the stored subscription end date.
+
+After adding Stripe event-time protection, returning with `billing=updated` again synchronized the current subscription without losing the scheduled cancellation. The completed My Page view continued to show the September 13, 2026 cancellation date and all-course access through that date.

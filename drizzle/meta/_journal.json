@@ -22,6 +22,20 @@
       "when": 1786594615939,
       "tag": "0002_thick_proemial_gods",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1786596179315,
+      "tag": "0003_faulty_warstar",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1786599396131,
+      "tag": "0004_conscious_hitman",
+      "breakpoints": true
     }
   ]
 }

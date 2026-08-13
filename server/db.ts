@@ -1,9 +1,9 @@
-import { and, asc, desc, eq, gte, like, lte, or } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, like, lte, or } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { categories, courses, doctors, InsertUser, subscriptions, users, viewingProgress, wishlists } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 import { ensureCatalogSeed } from "./seed";
-import { requireSubscriptionAccess, subscriptionAccessState } from "../shared/subscription";
+import { requireSubscriptionAccess, shouldApplyStripeEvent, StripeSubscriptionStatus, subscriptionAccessState } from "../shared/subscription";
 
 export const SUBSCRIPTION_PRICE_YEN = 980;
 
@@ -50,6 +50,52 @@ export async function getUserByOpenId(openId: string) {
   return result[0];
 }
 
+export async function getUserById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
+  return result[0];
+}
+
+export async function getUserByStripeCustomerId(stripeCustomerId: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(users).where(eq(users.stripeCustomerId, stripeCustomerId)).limit(1);
+  return result[0];
+}
+
+export async function setStripeCustomerId(userId: number, stripeCustomerId: string) {
+  const db = await readyDb();
+  await db.update(users).set({ stripeCustomerId }).where(eq(users.id, userId));
+}
+
+export async function syncStripeSubscription(input: {
+  userId: number;
+  stripeSubscriptionId: string;
+  status: StripeSubscriptionStatus;
+  currentPeriodEnd: Date | null;
+  cancelAtPeriodEnd: boolean;
+  stripeEventCreatedAt: Date;
+}) {
+  const db = await readyDb();
+  const existing = await db.select().from(subscriptions).where(eq(subscriptions.userId, input.userId)).limit(1);
+  const values = {
+    status: input.status,
+    stripeSubscriptionId: input.stripeSubscriptionId,
+    currentPeriodEnd: input.currentPeriodEnd,
+    cancelAtPeriodEnd: input.cancelAtPeriodEnd,
+    stripeEventCreatedAt: input.stripeEventCreatedAt,
+    renewedAt: new Date(),
+  };
+  if (existing[0]) {
+    if (!shouldApplyStripeEvent(existing[0].stripeEventCreatedAt, input.stripeEventCreatedAt)) return false;
+    await db.update(subscriptions).set(values).where(eq(subscriptions.id, existing[0].id));
+  } else {
+    await db.insert(subscriptions).values({ userId: input.userId, monthlyPrice: SUBSCRIPTION_PRICE_YEN, ...values });
+  }
+  return true;
+}
+
 export type CourseFilters = {
   search?: string;
   category?: string;
@@ -81,8 +127,13 @@ async function readyDb() {
   return db;
 }
 
+async function subscriptionByUser(db: NonNullable<ReturnType<typeof drizzle>>, userId: number) {
+  const result = await db.select().from(subscriptions).where(eq(subscriptions.userId, userId)).limit(1);
+  return result[0] ?? null;
+}
+
 async function activeSubscription(db: NonNullable<ReturnType<typeof drizzle>>, userId: number) {
-  const result = await db.select().from(subscriptions).where(and(eq(subscriptions.userId, userId), eq(subscriptions.status, "active"))).limit(1);
+  const result = await db.select().from(subscriptions).where(and(eq(subscriptions.userId, userId), inArray(subscriptions.status, ["active", "trialing"]))).limit(1);
   return result[0] ?? null;
 }
 
@@ -137,27 +188,15 @@ export async function getFeaturedCourse() {
 
 export async function getSubscriptionStatus(userId: number) {
   const db = await readyDb();
-  const subscription = await activeSubscription(db, userId);
+  const subscription = await subscriptionByUser(db, userId);
   return { ...subscriptionAccessState(subscription), monthlyPrice: SUBSCRIPTION_PRICE_YEN, subscription };
-}
-
-export async function activateDemoSubscription(userId: number) {
-  const db = await readyDb();
-  const existing = await db.select().from(subscriptions).where(eq(subscriptions.userId, userId)).limit(1);
-  if (existing[0]?.status === "active") return { alreadySubscribed: true, monthlyPrice: SUBSCRIPTION_PRICE_YEN };
-  if (existing[0]) {
-    await db.update(subscriptions).set({ status: "active", monthlyPrice: SUBSCRIPTION_PRICE_YEN, renewedAt: new Date() }).where(eq(subscriptions.id, existing[0].id));
-  } else {
-    await db.insert(subscriptions).values({ userId, monthlyPrice: SUBSCRIPTION_PRICE_YEN });
-  }
-  return { alreadySubscribed: false, monthlyPrice: SUBSCRIPTION_PRICE_YEN };
 }
 
 export async function getCourseActions(userId: number, courseId: number) {
   const db = await readyDb();
   const [wishlistRows, subscription, progressRows] = await Promise.all([
     db.select().from(wishlists).where(and(eq(wishlists.userId, userId), eq(wishlists.courseId, courseId))).limit(1),
-    activeSubscription(db, userId),
+    subscriptionByUser(db, userId),
     db.select().from(viewingProgress).where(and(eq(viewingProgress.userId, userId), eq(viewingProgress.courseId, courseId))).limit(1),
   ]);
   return { wishlisted: wishlistRows.length > 0, ...subscriptionAccessState(subscription), monthlyPrice: SUBSCRIPTION_PRICE_YEN, progress: progressRows[0] ?? null };
@@ -192,7 +231,7 @@ export async function getUserLibrary(userId: number) {
   const [wishlistRows, progressRows, subscription] = await Promise.all([
     db.select({ ...courseSelect, savedAt: wishlists.createdAt }).from(wishlists).innerJoin(courses, eq(wishlists.courseId, courses.id)).innerJoin(categories, eq(courses.categoryId, categories.id)).innerJoin(doctors, eq(courses.doctorId, doctors.id)).where(eq(wishlists.userId, userId)).orderBy(desc(wishlists.createdAt)),
     db.select({ ...courseSelect, progressPercent: viewingProgress.progressPercent, lastPositionSeconds: viewingProgress.lastPositionSeconds, completed: viewingProgress.completed, updatedAt: viewingProgress.updatedAt }).from(viewingProgress).innerJoin(courses, eq(viewingProgress.courseId, courses.id)).innerJoin(categories, eq(courses.categoryId, categories.id)).innerJoin(doctors, eq(courses.doctorId, doctors.id)).where(eq(viewingProgress.userId, userId)).orderBy(desc(viewingProgress.updatedAt)),
-    activeSubscription(db, userId),
+    subscriptionByUser(db, userId),
   ]);
   return { wishlist: wishlistRows, progress: progressRows, ...subscriptionAccessState(subscription), monthlyPrice: SUBSCRIPTION_PRICE_YEN, subscription };
 }

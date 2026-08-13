@@ -5,6 +5,7 @@ export const users = mysqlTable("users", {
   openId: varchar("openId", { length: 64 }).notNull().unique(),
   name: text("name"),
   email: varchar("email", { length: 320 }),
+  stripeCustomerId: varchar("stripeCustomerId", { length: 255 }).unique(),
   loginMethod: varchar("loginMethod", { length: 64 }),
   role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -15,7 +16,13 @@ export const users = mysqlTable("users", {
 export const subscriptions = mysqlTable("subscriptions", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull().references(() => users.id),
-  status: mysqlEnum("status", ["active", "cancelled"]).default("active").notNull(),
+  /** Webhook-managed entitlement cache; Stripe remains the billing source of truth. */
+  status: mysqlEnum("status", ["active", "trialing", "past_due", "unpaid", "canceled", "incomplete", "incomplete_expired", "paused"]).default("incomplete").notNull(),
+  stripeSubscriptionId: varchar("stripeSubscriptionId", { length: 255 }).unique(),
+  /** Last accepted Stripe event timestamp, retained only to reject stale event writes. */
+  stripeEventCreatedAt: timestamp("stripeEventCreatedAt"),
+  currentPeriodEnd: timestamp("currentPeriodEnd"),
+  cancelAtPeriodEnd: boolean("cancelAtPeriodEnd").default(false).notNull(),
   monthlyPrice: int("monthlyPrice").default(980).notNull(),
   startedAt: timestamp("startedAt").defaultNow().notNull(),
   renewedAt: timestamp("renewedAt").defaultNow().notNull(),
