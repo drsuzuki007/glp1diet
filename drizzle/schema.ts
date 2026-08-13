@@ -108,6 +108,15 @@ export const learningActivities = mysqlTable("learningActivities", {
   recordedAt: timestamp("recordedAt").defaultNow().notNull(),
 }, table => [index("learning_activity_user_recorded_idx").on(table.userId, table.recordedAt)]);
 
+/** One learner-selected educational focus; this is not medical profile data or a clinical goal. */
+export const learningGoals = mysqlTable("learningGoals", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().references(() => users.id),
+  goal: mysqlEnum("goal", ["understand_glp1", "improve_lifestyle", "understand_checks", "prepare_for_visit"]).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, table => [uniqueIndex("learning_goal_user_unique").on(table.userId)]);
+
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 export type Category = typeof categories.$inferSelect;

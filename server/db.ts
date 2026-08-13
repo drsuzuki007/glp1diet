@@ -1,11 +1,12 @@
 import { and, asc, desc, eq, gte, inArray, like, lte, or } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { categories, courses, doctors, InsertUser, learningActivities, subscriptions, users, viewingProgress, wishlists } from "../drizzle/schema";
+import { categories, courses, doctors, InsertUser, learningActivities, learningGoals, subscriptions, users, viewingProgress, wishlists } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 import { ensureCatalogSeed } from "./seed";
 import { requireSubscriptionAccess, shouldApplyStripeEvent, StripeSubscriptionStatus, subscriptionAccessState } from "../shared/subscription";
 import { buildMonthlyLearningReport, mergeHistoricalProgressForReport } from "../shared/learningReport";
 import { buildRecommendations } from "../shared/recommendations";
+import { type LearningGoalValue } from "../shared/learningGoals";
 
 export const SUBSCRIPTION_PRICE_YEN = 980;
 
@@ -194,6 +195,18 @@ export async function getSubscriptionStatus(userId: number) {
   return { ...subscriptionAccessState(subscription), monthlyPrice: SUBSCRIPTION_PRICE_YEN, subscription };
 }
 
+export async function getLearningGoal(userId: number) {
+  const db = await readyDb();
+  const result = await db.select().from(learningGoals).where(eq(learningGoals.userId, userId)).limit(1);
+  return result[0]?.goal ?? null;
+}
+
+export async function setLearningGoal(userId: number, goal: LearningGoalValue) {
+  const db = await readyDb();
+  await db.insert(learningGoals).values({ userId, goal }).onDuplicateKeyUpdate({ set: { goal, updatedAt: new Date() } });
+  return { goal };
+}
+
 export async function getCourseActions(userId: number, courseId: number) {
   const db = await readyDb();
   const [wishlistRows, subscription, progressRows] = await Promise.all([
@@ -239,15 +252,16 @@ export async function getUserLibrary(userId: number) {
   const sixMonthsAgo = new Date();
   sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 5, 1);
   sixMonthsAgo.setHours(0, 0, 0, 0);
-  const [wishlistRows, progressRows, subscription, catalogRows, activityRows] = await Promise.all([
+  const [wishlistRows, progressRows, subscription, catalogRows, activityRows, learningGoal] = await Promise.all([
     db.select({ ...courseSelect, savedAt: wishlists.createdAt }).from(wishlists).innerJoin(courses, eq(wishlists.courseId, courses.id)).innerJoin(categories, eq(courses.categoryId, categories.id)).innerJoin(doctors, eq(courses.doctorId, doctors.id)).where(eq(wishlists.userId, userId)).orderBy(desc(wishlists.createdAt)),
     db.select({ ...courseSelect, progressPercent: viewingProgress.progressPercent, lastPositionSeconds: viewingProgress.lastPositionSeconds, completed: viewingProgress.completed, updatedAt: viewingProgress.updatedAt }).from(viewingProgress).innerJoin(courses, eq(viewingProgress.courseId, courses.id)).innerJoin(categories, eq(courses.categoryId, categories.id)).innerJoin(doctors, eq(courses.doctorId, doctors.id)).where(eq(viewingProgress.userId, userId)).orderBy(desc(viewingProgress.updatedAt)),
     subscriptionByUser(db, userId),
     db.select(courseSelect).from(courses).innerJoin(categories, eq(courses.categoryId, categories.id)).innerJoin(doctors, eq(courses.doctorId, doctors.id)).orderBy(desc(courses.publishedAt)),
     db.select({ courseId: learningActivities.courseId, recordedAt: learningActivities.recordedAt, watchedSeconds: learningActivities.watchedSeconds, completed: learningActivities.completed }).from(learningActivities).where(and(eq(learningActivities.userId, userId), gte(learningActivities.recordedAt, sixMonthsAgo))),
+    getLearningGoal(userId),
   ]);
   const access = subscriptionAccessState(subscription);
   const monthlyLearning = buildMonthlyLearningReport(mergeHistoricalProgressForReport(activityRows, progressRows.map(progress => ({ courseId: progress.id, durationMinutes: progress.durationMinutes, progressPercent: progress.progressPercent, completed: progress.completed, updatedAt: progress.updatedAt }))));
-  const recommendations = access.subscribed ? buildRecommendations(catalogRows, progressRows.map(progress => ({ id: progress.id, progressPercent: progress.progressPercent, completed: progress.completed }))) : [];
-  return { wishlist: wishlistRows, progress: progressRows, availableCourses: access.subscribed ? catalogRows : [], recommendations, learningReport: monthlyLearning, ...access, monthlyPrice: SUBSCRIPTION_PRICE_YEN, subscription };
+  const recommendations = access.subscribed ? buildRecommendations(catalogRows, progressRows.map(progress => ({ id: progress.id, progressPercent: progress.progressPercent, completed: progress.completed })), 3, learningGoal) : [];
+  return { wishlist: wishlistRows, progress: progressRows, availableCourses: access.subscribed ? catalogRows : [], recommendations, learningGoal, learningReport: monthlyLearning, ...access, monthlyPrice: SUBSCRIPTION_PRICE_YEN, subscription };
 }

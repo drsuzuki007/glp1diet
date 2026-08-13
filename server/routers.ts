@@ -8,10 +8,12 @@ import {
   getCatalogFilters,
   getCourseActions,
   getCourseBySlug,
+  getLearningGoal,
   getFeaturedCourse,
   getSubscriptionStatus,
   getUserLibrary,
   listCourses,
+  setLearningGoal,
   toggleWishlist,
   updateCourseProgress,
 } from "./db";
@@ -61,6 +63,10 @@ export const appRouter = router({
   }),
   library: router({
     mine: protectedProcedure.query(({ ctx }) => getUserLibrary(ctx.user.id)),
+  }),
+  learningGoal: router({
+    mine: protectedProcedure.query(({ ctx }) => getLearningGoal(ctx.user.id)),
+    set: protectedProcedure.input(z.enum(["understand_glp1", "improve_lifestyle", "understand_checks", "prepare_for_visit"])).mutation(({ ctx, input }) => setLearningGoal(ctx.user.id, input)),
   }),
 });
 
