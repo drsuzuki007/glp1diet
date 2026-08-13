@@ -45,3 +45,7 @@ After the cancellation event, the app refreshed the Stripe subscription on retur
 Following the scheduled cancellation, a separate course detail route still displayed `視聴を開始する` and `この講座を視聴する`. This confirms that period-end cancellation continues to grant all-course playback access through the stored subscription end date.
 
 After adding Stripe event-time protection, returning with `billing=updated` again synchronized the current subscription without losing the scheduled cancellation. The completed My Page view continued to show the September 13, 2026 cancellation date and all-course access through that date.
+
+The expanded My Page dashboard was checked in development-only state previews. In the unsubscribed view, the dashboard showed `未加入`, `0講座`, and no all-access video section. In the active-subscription view, it showed the next billing date, `10講座`, every playable course card, and saved viewing percentages on courses with progress.
+
+The actual Stripe-synchronized cancellation-pending state was also checked at `/mypage?billing=updated`. It displayed `解約予定`, the September 13, 2026 viewing deadline, 10 playable courses, and per-course progress links, demonstrating that all-access content remains visible through the paid period.

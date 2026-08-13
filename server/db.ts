@@ -228,10 +228,12 @@ export async function updateCourseProgress(userId: number, courseId: number, pro
 
 export async function getUserLibrary(userId: number) {
   const db = await readyDb();
-  const [wishlistRows, progressRows, subscription] = await Promise.all([
+  const [wishlistRows, progressRows, subscription, catalogRows] = await Promise.all([
     db.select({ ...courseSelect, savedAt: wishlists.createdAt }).from(wishlists).innerJoin(courses, eq(wishlists.courseId, courses.id)).innerJoin(categories, eq(courses.categoryId, categories.id)).innerJoin(doctors, eq(courses.doctorId, doctors.id)).where(eq(wishlists.userId, userId)).orderBy(desc(wishlists.createdAt)),
     db.select({ ...courseSelect, progressPercent: viewingProgress.progressPercent, lastPositionSeconds: viewingProgress.lastPositionSeconds, completed: viewingProgress.completed, updatedAt: viewingProgress.updatedAt }).from(viewingProgress).innerJoin(courses, eq(viewingProgress.courseId, courses.id)).innerJoin(categories, eq(courses.categoryId, categories.id)).innerJoin(doctors, eq(courses.doctorId, doctors.id)).where(eq(viewingProgress.userId, userId)).orderBy(desc(viewingProgress.updatedAt)),
     subscriptionByUser(db, userId),
+    db.select(courseSelect).from(courses).innerJoin(categories, eq(courses.categoryId, categories.id)).innerJoin(doctors, eq(courses.doctorId, doctors.id)).orderBy(desc(courses.publishedAt)),
   ]);
-  return { wishlist: wishlistRows, progress: progressRows, ...subscriptionAccessState(subscription), monthlyPrice: SUBSCRIPTION_PRICE_YEN, subscription };
+  const access = subscriptionAccessState(subscription);
+  return { wishlist: wishlistRows, progress: progressRows, availableCourses: access.subscribed ? catalogRows : [], ...access, monthlyPrice: SUBSCRIPTION_PRICE_YEN, subscription };
 }
