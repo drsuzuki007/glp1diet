@@ -1,5 +1,5 @@
-import { Bookmark, CirclePlay, Clock3, Crown, GraduationCap, LibraryBig, LockKeyhole, PlayCircle } from "lucide-react";
-import { useEffect } from "react";
+import { ArrowDown, ArrowUp, Bookmark, CirclePlay, Clock3, Crown, GraduationCap, LibraryBig, LockKeyhole, PlayCircle } from "lucide-react";
+import { useEffect, useState } from "react";
 import { Link, useLocation, useSearch } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { startLogin } from "@/const";
@@ -8,7 +8,7 @@ import SiteFrame from "@/components/SiteFrame";
 import { formatDate, formatYen, type CourseSummary } from "@/lib/course";
 import { trpc } from "@/lib/trpc";
 import type { MonthlyLearningMetric } from "@shared/learningReport";
-import { findLearningGoals, learningGoals, type LearningGoalValue } from "@shared/learningGoals";
+import { findLearningGoal, learningGoals, type LearningGoalValue } from "@shared/learningGoals";
 import { toast } from "sonner";
 
 type LibraryCourse = CourseSummary & { savedAt?: Date; progressPercent?: number | null; completed?: boolean | null };
@@ -45,14 +45,21 @@ function LearningReport({ monthly }: { monthly: MonthlyLearningMetric[] }) {
 
 function LearningGoalSettings() {
   const utils = trpc.useUtils();
+  const [prioritySaved, setPrioritySaved] = useState(false);
   const goalQuery = trpc.learningGoal.mine.useQuery();
   const refreshGoals = () => { utils.learningGoal.mine.invalidate(); utils.library.mine.invalidate(); };
   const addGoal = trpc.learningGoal.add.useMutation({ onSuccess: () => { refreshGoals(); toast.success("学習目標を追加しました。おすすめを見直しています。"); }, onError: () => toast.error("学習目標を保存できませんでした。") });
   const removeGoal = trpc.learningGoal.remove.useMutation({ onSuccess: () => { refreshGoals(); toast.success("学習目標を解除しました。おすすめを見直しています。"); }, onError: () => toast.error("学習目標を更新できませんでした。") });
-  const activeGoals = findLearningGoals(goalQuery.data as LearningGoalValue[] | null | undefined);
+  const reorderGoals = trpc.learningGoal.reorder.useMutation({ onMutate: () => setPrioritySaved(false), onSuccess: () => { setPrioritySaved(true); refreshGoals(); toast.success("学習目標の優先順位を更新しました。おすすめを並べ替えています。"); }, onError: () => toast.error("優先順位を更新できませんでした。") });
+  const activeGoals = (goalQuery.data ?? []).flatMap(item => {
+    const goal = findLearningGoal(item.goal as LearningGoalValue);
+    return goal ? [{ ...goal, priority: item.priority }] : [];
+  });
   const activeGoalValues = new Set(activeGoals.map(goal => goal.value));
-  const changing = addGoal.isPending || removeGoal.isPending;
-  return <section className="learning-goal-panel" aria-label="学習目標の設定"><div className="learning-goal-panel__heading"><div><span className="eyebrow eyebrow--gold">YOUR LEARNING GOALS</span><h2>いま学びたいこと</h2><p>複数の目標を選ぶと、各テーマに沿った未視聴講座を優先して提案します。</p></div>{activeGoals.length > 0 && <span className="learning-goal-panel__current">設定中：{activeGoals.map(goal => goal.label).join("・")}</span>}</div><div className="learning-goal-options">{learningGoals.map(goal => { const active = activeGoalValues.has(goal.value); return <button key={goal.value} type="button" className={active ? "is-active" : ""} onClick={() => active ? removeGoal.mutate(goal.value) : addGoal.mutate(goal.value)} disabled={changing} aria-pressed={active}><strong>{goal.label}</strong><span>{goal.description}</span></button>; })}</div><p className="learning-goal-panel__note">複数選択できます。学習目標は教育コンテンツの表示順を調整するための設定であり、診断や治療方針を示すものではありません。</p></section>;
+  const goalSelectionPending = addGoal.isPending || removeGoal.isPending;
+  const goalReorderPending = reorderGoals.isPending;
+  const moveGoal = (goal: LearningGoalValue, offset: -1 | 1) => { const currentIndex = activeGoals.findIndex(item => item.value === goal); const nextIndex = currentIndex + offset; if (currentIndex < 0 || nextIndex < 0 || nextIndex >= activeGoals.length) return; const next = [...activeGoals]; [next[currentIndex], next[nextIndex]] = [next[nextIndex], next[currentIndex]]; reorderGoals.mutate(next.map(item => item.value)); };
+  return <section className="learning-goal-panel" aria-label="学習目標の設定"><div className="learning-goal-panel__heading"><div><span className="eyebrow eyebrow--gold">YOUR LEARNING GOALS</span><h2>いま学びたいこと</h2><p>優先順位1の目標から順に、未視聴講座をおすすめの上位へ表示します。</p></div>{activeGoals.length > 0 && <div className="learning-goal-panel__status"><span className="learning-goal-panel__current">設定中：{activeGoals.map(goal => `${goal.priority}.${goal.label}`).join(" ・ ")}</span>{goalReorderPending && <small aria-live="polite">優先順位を保存中…</small>}{prioritySaved && !goalReorderPending && <small className="learning-goal-panel__saved" aria-live="polite">優先順位を保存しました</small>}</div>}</div><div className="learning-goal-options">{learningGoals.map(goal => { const activeGoal = activeGoals.find(item => item.value === goal.value); const active = Boolean(activeGoal); const currentIndex = activeGoals.findIndex(item => item.value === goal.value); return <div key={goal.value} className={`learning-goal-option ${active ? "is-active" : ""}`}><button type="button" className="learning-goal-option__select" onClick={() => active ? removeGoal.mutate(goal.value) : addGoal.mutate(goal.value)} disabled={goalSelectionPending} aria-pressed={active}>{active && <em>優先度 {activeGoal?.priority}</em>}<strong>{goal.label}</strong><span>{goal.description}</span>{active && <small>選択を解除</small>}</button>{active && <div className="learning-goal-option__controls" aria-label={`${goal.label}の優先順位を変更`}><button type="button" onClick={() => moveGoal(goal.value, -1)} disabled={goalReorderPending || currentIndex === 0} aria-label={`${goal.label}の優先順位を上げる`}><ArrowUp size={14} /></button><button type="button" onClick={() => moveGoal(goal.value, 1)} disabled={goalReorderPending || currentIndex === activeGoals.length - 1} aria-label={`${goal.label}の優先順位を下げる`}><ArrowDown size={14} /></button></div>}</div>; })}</div><p className="learning-goal-panel__note">複数選択できます。矢印で優先順位を変更できます。学習目標は教育コンテンツの表示順を調整するための設定であり、診断や治療方針を示すものではありません。</p></section>;
 }
 
 function RecommendationPanel({ recommendations }: { recommendations: Recommendation[] }) {

@@ -22,7 +22,7 @@ export type CourseRecommendation<T extends RecommendableCourse = RecommendableCo
 /** Produces transparent, deterministic recommendations using only a learner's own saved viewing state. */
 export function buildRecommendations<T extends RecommendableCourse>(catalog: T[], progressRows: LearnerProgress[], limit = 3, goalValues?: readonly LearningGoalValue[] | null): CourseRecommendation<T>[] {
   const goals = findLearningGoals(goalValues);
-  const goalCategorySlugs = new Set<string>(goals.map(goal => goal.categorySlug));
+  const goalPriorityByCategory = new Map<string, number>(goals.map((goal, index) => [goal.categorySlug, index]));
   const byCourseId = new Map(progressRows.map(progress => [progress.id, progress]));
   const categoryScore = new Map<number, number>();
   for (const progress of progressRows) {
@@ -36,8 +36,9 @@ export function buildRecommendations<T extends RecommendableCourse>(catalog: T[]
   }).sort((left, right) => (byCourseId.get(right.id)?.progressPercent ?? 0) - (byCourseId.get(left.id)?.progressPercent ?? 0));
   const unseen = catalog.filter(course => !byCourseId.has(course.id));
   const scoredUnseen = unseen.sort((left, right) => {
-    const goalDifference = Number(goalCategorySlugs.has(right.category.slug)) - Number(goalCategorySlugs.has(left.category.slug));
-    if (goalDifference) return goalDifference;
+    const leftGoalPriority = goalPriorityByCategory.get(left.category.slug) ?? Number.POSITIVE_INFINITY;
+    const rightGoalPriority = goalPriorityByCategory.get(right.category.slug) ?? Number.POSITIVE_INFINITY;
+    if (leftGoalPriority !== rightGoalPriority) return leftGoalPriority - rightGoalPriority;
     const scoreDifference = (categoryScore.get(right.category.id) ?? 0) - (categoryScore.get(left.category.id) ?? 0);
     return scoreDifference || right.publishedAt.getTime() - left.publishedAt.getTime();
   });
@@ -48,7 +49,8 @@ export function buildRecommendations<T extends RecommendableCourse>(catalog: T[]
     const matchingGoals = goals.filter(goal => goal.categorySlug === course.category.slug);
     const goalMatch = matchingGoals.length > 0;
     const goalLabels = matchingGoals.map(goal => goal.label).join("・");
-    selected.push({ course, kind: goalMatch || hasThemeHistory ? "topic" : "explore", reason: goalMatch ? `学習目標「${goalLabels}」に沿って、次に理解を深める講座です。` : hasThemeHistory ? `「${course.category.name}」を学んだ流れで、次の理解につながる講座です。` : "これまでの学びを広げる新しいテーマの講座です。" });
+    const priority = matchingGoals.length ? goals.findIndex(goal => goal.categorySlug === course.category.slug) + 1 : null;
+    selected.push({ course, kind: goalMatch || hasThemeHistory ? "topic" : "explore", reason: goalMatch ? `優先度${priority}の学習目標「${goalLabels}」に沿って、次に理解を深める講座です。` : hasThemeHistory ? `「${course.category.name}」を学んだ流れで、次の理解につながる講座です。` : "これまでの学びを広げる新しいテーマの講座です。" });
     selectedCourseIds.add(course.id);
   };
   // Keep the strongest continuation while reserving space for goal-aligned next steps.

@@ -15,6 +15,7 @@ import {
   getUserLibrary,
   listCourses,
   removeLearningGoal,
+  reorderLearningGoals,
   toggleWishlist,
   updateCourseProgress,
 } from "./db";
@@ -69,6 +70,7 @@ export const appRouter = router({
     mine: protectedProcedure.query(({ ctx }) => getLearningGoals(ctx.user.id)),
     add: protectedProcedure.input(z.enum(["understand_glp1", "improve_lifestyle", "understand_checks", "prepare_for_visit"])).mutation(({ ctx, input }) => addLearningGoal(ctx.user.id, input)),
     remove: protectedProcedure.input(z.enum(["understand_glp1", "improve_lifestyle", "understand_checks", "prepare_for_visit"])).mutation(({ ctx, input }) => removeLearningGoal(ctx.user.id, input)),
+    reorder: protectedProcedure.input(z.array(z.enum(["understand_glp1", "improve_lifestyle", "understand_checks", "prepare_for_visit"])).min(1).max(4)).mutation(({ ctx, input }) => reorderLearningGoals(ctx.user.id, input)),
   }),
 });
 

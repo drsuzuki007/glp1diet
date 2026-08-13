@@ -45,9 +45,26 @@ describe("buildRecommendations", () => {
 
   it("prioritizes the categories of every selected goal", () => {
     const recommendations = buildRecommendations(courses, [{ id: 1, progressPercent: 20, completed: false }], 3, ["improve_lifestyle", "understand_glp1"]);
-    expect(recommendations.map(item => item.course.id)).toEqual([1, 2, 3]);
-    expect(recommendations[1]?.reason).toContain("GLP-1の基礎を知る");
-    expect(recommendations[2]?.reason).toContain("食事・生活習慣を整える");
+    expect(recommendations.map(item => item.course.id)).toEqual([1, 3, 2]);
+    expect(recommendations[1]?.reason).toContain("優先度1");
+    expect(recommendations[1]?.reason).toContain("食事・生活習慣を整える");
+    expect(recommendations[2]?.reason).toContain("優先度2");
+    expect(recommendations[2]?.reason).toContain("GLP-1の基礎を知る");
+  });
+
+  it("moves the higher-priority goal category ahead when goal order changes", () => {
+    const recommendations = buildRecommendations(
+      courses,
+      [{ id: 1, progressPercent: 100, completed: true }],
+      3,
+      ["understand_glp1", "improve_lifestyle"],
+    );
+
+    expect(recommendations.map(item => item.course.id)).toEqual([2, 3, 4]);
+    expect(recommendations[0]?.reason).toContain("優先度1");
+    expect(recommendations[0]?.reason).toContain("GLP-1の基礎を知る");
+    expect(recommendations[1]?.reason).toContain("優先度2");
+    expect(recommendations[1]?.reason).toContain("食事・生活習慣を整える");
   });
 
   it("uses only the remaining goal after another goal is removed", () => {

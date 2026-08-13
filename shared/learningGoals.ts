@@ -12,6 +12,8 @@ export function findLearningGoal(value: LearningGoalValue | null | undefined) {
 }
 
 export function findLearningGoals(values: readonly LearningGoalValue[] | null | undefined) {
-  const selected = new Set(values ?? []);
-  return learningGoals.filter(goal => selected.has(goal.value));
+  return (values ?? []).flatMap(value => {
+    const goal = findLearningGoal(value);
+    return goal ? [goal] : [];
+  });
 }

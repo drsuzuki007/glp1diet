@@ -197,20 +197,37 @@ export async function getSubscriptionStatus(userId: number) {
 
 export async function getLearningGoals(userId: number) {
   const db = await readyDb();
-  const result = await db.select().from(learningGoals).where(eq(learningGoals.userId, userId));
-  return result.map(item => item.goal as LearningGoalValue);
+  const result = await db.select().from(learningGoals).where(eq(learningGoals.userId, userId)).orderBy(asc(learningGoals.priority), asc(learningGoals.createdAt));
+  return result.map(item => ({ goal: item.goal as LearningGoalValue, priority: item.priority }));
 }
 
 export async function addLearningGoal(userId: number, goal: LearningGoalValue) {
   const db = await readyDb();
-  const existing = await db.select({ id: learningGoals.id }).from(learningGoals).where(and(eq(learningGoals.userId, userId), eq(learningGoals.goal, goal))).limit(1);
-  if (!existing[0]) await db.insert(learningGoals).values({ userId, goal });
+  const existingGoals = await db.select({ goal: learningGoals.goal, priority: learningGoals.priority }).from(learningGoals).where(eq(learningGoals.userId, userId));
+  if (!existingGoals.some(item => item.goal === goal)) {
+    await db.insert(learningGoals).values({ userId, goal, priority: Math.max(...existingGoals.map(item => item.priority), 0) + 1 });
+  }
   return getLearningGoals(userId);
 }
 
 export async function removeLearningGoal(userId: number, goal: LearningGoalValue) {
   const db = await readyDb();
   await db.delete(learningGoals).where(and(eq(learningGoals.userId, userId), eq(learningGoals.goal, goal)));
+  return getLearningGoals(userId);
+}
+
+export async function reorderLearningGoals(userId: number, orderedGoals: LearningGoalValue[]) {
+  const db = await readyDb();
+  const existing = await getLearningGoals(userId);
+  const existingValues = existing.map(item => item.goal);
+  const expected = new Set(existingValues);
+  if (orderedGoals.length !== existingValues.length || new Set(orderedGoals).size !== orderedGoals.length || orderedGoals.some(goal => !expected.has(goal))) {
+    throw new Error("学習目標の並び順が不正です。");
+  }
+  for (let index = 0; index < orderedGoals.length; index += 1) {
+    const goal = orderedGoals[index]!;
+    await db.update(learningGoals).set({ priority: index + 1 }).where(and(eq(learningGoals.userId, userId), eq(learningGoals.goal, goal)));
+  }
   return getLearningGoals(userId);
 }
 
@@ -259,7 +276,7 @@ export async function getUserLibrary(userId: number) {
   const sixMonthsAgo = new Date();
   sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 5, 1);
   sixMonthsAgo.setHours(0, 0, 0, 0);
-  const [wishlistRows, progressRows, subscription, catalogRows, activityRows, learningGoals] = await Promise.all([
+  const [wishlistRows, progressRows, subscription, catalogRows, activityRows, learningGoalRows] = await Promise.all([
     db.select({ ...courseSelect, savedAt: wishlists.createdAt }).from(wishlists).innerJoin(courses, eq(wishlists.courseId, courses.id)).innerJoin(categories, eq(courses.categoryId, categories.id)).innerJoin(doctors, eq(courses.doctorId, doctors.id)).where(eq(wishlists.userId, userId)).orderBy(desc(wishlists.createdAt)),
     db.select({ ...courseSelect, progressPercent: viewingProgress.progressPercent, lastPositionSeconds: viewingProgress.lastPositionSeconds, completed: viewingProgress.completed, updatedAt: viewingProgress.updatedAt }).from(viewingProgress).innerJoin(courses, eq(viewingProgress.courseId, courses.id)).innerJoin(categories, eq(courses.categoryId, categories.id)).innerJoin(doctors, eq(courses.doctorId, doctors.id)).where(eq(viewingProgress.userId, userId)).orderBy(desc(viewingProgress.updatedAt)),
     subscriptionByUser(db, userId),
@@ -269,6 +286,6 @@ export async function getUserLibrary(userId: number) {
   ]);
   const access = subscriptionAccessState(subscription);
   const monthlyLearning = buildMonthlyLearningReport(mergeHistoricalProgressForReport(activityRows, progressRows.map(progress => ({ courseId: progress.id, durationMinutes: progress.durationMinutes, progressPercent: progress.progressPercent, completed: progress.completed, updatedAt: progress.updatedAt }))));
-  const recommendations = access.subscribed ? buildRecommendations(catalogRows, progressRows.map(progress => ({ id: progress.id, progressPercent: progress.progressPercent, completed: progress.completed })), 3, learningGoals) : [];
-  return { wishlist: wishlistRows, progress: progressRows, availableCourses: access.subscribed ? catalogRows : [], recommendations, learningGoals, learningReport: monthlyLearning, ...access, monthlyPrice: SUBSCRIPTION_PRICE_YEN, subscription };
+  const recommendations = access.subscribed ? buildRecommendations(catalogRows, progressRows.map(progress => ({ id: progress.id, progressPercent: progress.progressPercent, completed: progress.completed })), 3, learningGoalRows.map(item => item.goal)) : [];
+  return { wishlist: wishlistRows, progress: progressRows, availableCourses: access.subscribed ? catalogRows : [], recommendations, learningGoals: learningGoalRows, learningReport: monthlyLearning, ...access, monthlyPrice: SUBSCRIPTION_PRICE_YEN, subscription };
 }

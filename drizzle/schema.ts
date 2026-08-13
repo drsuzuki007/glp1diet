@@ -113,6 +113,8 @@ export const learningGoals = mysqlTable("learningGoals", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull().references(() => users.id),
   goal: mysqlEnum("goal", ["understand_glp1", "improve_lifestyle", "understand_checks", "prepare_for_visit"]).notNull(),
+  /** Lower numbers indicate higher learner-selected recommendation priority. */
+  priority: int("priority").default(1).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 }, table => [uniqueIndex("learning_goal_user_goal_unique").on(table.userId, table.goal)]);
