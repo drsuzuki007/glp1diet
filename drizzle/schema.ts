@@ -1,17 +1,7 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import { boolean, int, mysqlEnum, mysqlTable, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/mysql-core";
 
-/**
- * Core user table backing auth flow.
- * Extend this file with additional tables as your product grows.
- * Columns use camelCase to match both database fields and generated types.
- */
 export const users = mysqlTable("users", {
-  /**
-   * Surrogate primary key. Auto-incremented numeric value managed by the database.
-   * Use this for relations between tables.
-   */
   id: int("id").autoincrement().primaryKey(),
-  /** Manus OAuth identifier (openId) returned from the OAuth callback. Unique per user. */
   openId: varchar("openId", { length: 64 }).notNull().unique(),
   name: text("name"),
   email: varchar("email", { length: 320 }),
@@ -22,7 +12,77 @@ export const users = mysqlTable("users", {
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
 });
 
+export const categories = mysqlTable("categories", {
+  id: int("id").autoincrement().primaryKey(),
+  slug: varchar("slug", { length: 64 }).notNull().unique(),
+  name: varchar("name", { length: 80 }).notNull(),
+  description: text("description").notNull(),
+  sortOrder: int("sortOrder").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export const doctors = mysqlTable("doctors", {
+  id: int("id").autoincrement().primaryKey(),
+  slug: varchar("slug", { length: 64 }).notNull().unique(),
+  name: varchar("name", { length: 80 }).notNull(),
+  specialty: varchar("specialty", { length: 120 }).notNull(),
+  profile: text("profile").notNull(),
+  affiliation: varchar("affiliation", { length: 160 }).notNull(),
+  initials: varchar("initials", { length: 8 }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export const courses = mysqlTable("courses", {
+  id: int("id").autoincrement().primaryKey(),
+  slug: varchar("slug", { length: 96 }).notNull().unique(),
+  categoryId: int("categoryId").notNull().references(() => categories.id),
+  doctorId: int("doctorId").notNull().references(() => doctors.id),
+  title: varchar("title", { length: 180 }).notNull(),
+  summary: text("summary").notNull(),
+  description: text("description").notNull(),
+  intendedFor: text("intendedFor").notNull(),
+  learningPoints: text("learningPoints").notNull(),
+  referencesText: text("referencesText").notNull(),
+  coiText: text("coiText").notNull(),
+  price: int("price").notNull(),
+  durationMinutes: int("durationMinutes").notNull(),
+  publishedAt: timestamp("publishedAt").notNull(),
+  reviewedAt: timestamp("reviewedAt").notNull(),
+  thumbnailTheme: varchar("thumbnailTheme", { length: 32 }).default("cyan").notNull(),
+  previewLabel: varchar("previewLabel", { length: 120 }).notNull(),
+  isFeatured: boolean("isFeatured").default(false).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export const wishlists = mysqlTable("wishlists", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().references(() => users.id),
+  courseId: int("courseId").notNull().references(() => courses.id),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, table => [uniqueIndex("wishlist_user_course_unique").on(table.userId, table.courseId)]);
+
+export const purchases = mysqlTable("purchases", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().references(() => users.id),
+  courseId: int("courseId").notNull().references(() => courses.id),
+  priceAtPurchase: int("priceAtPurchase").notNull(),
+  status: mysqlEnum("status", ["purchased"]).default("purchased").notNull(),
+  purchasedAt: timestamp("purchasedAt").defaultNow().notNull(),
+}, table => [uniqueIndex("purchase_user_course_unique").on(table.userId, table.courseId)]);
+
+export const viewingProgress = mysqlTable("viewingProgress", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().references(() => users.id),
+  courseId: int("courseId").notNull().references(() => courses.id),
+  progressPercent: int("progressPercent").default(0).notNull(),
+  lastPositionSeconds: int("lastPositionSeconds").default(0).notNull(),
+  completed: boolean("completed").default(false).notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, table => [uniqueIndex("progress_user_course_unique").on(table.userId, table.courseId)]);
+
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
-
-// TODO: Add your tables here
+export type Category = typeof categories.$inferSelect;
+export type Doctor = typeof doctors.$inferSelect;
+export type Course = typeof courses.$inferSelect;
