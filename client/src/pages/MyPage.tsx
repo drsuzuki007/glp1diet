@@ -11,10 +11,21 @@ import { trpc } from "@/lib/trpc";
 import type { MonthlyLearningMetric } from "@shared/learningReport";
 import { findLearningGoal, learningGoals, type LearningGoalValue } from "@shared/learningGoals";
 import { getWishlistedRecommendationIds, isWishlistedCourse, toggleWishlistCourseId } from "@shared/wishlist";
+import { getWishlistView, type WishlistFilter, type WishlistSort } from "@shared/wishlistView";
 import { toast } from "sonner";
 
 type LibraryCourse = CourseSummary & { savedAt?: Date; progressPercent?: number | null; completed?: boolean | null };
 type Recommendation = { course: CourseSummary; reason: string; kind: "continue" | "topic" | "explore"; wishlisted: boolean };
+type WishlistToolbarItem = { id: "wishlist-toolbar"; kind: "wishlist-toolbar"; total: number; filtered: number; sort: WishlistSort; filter: WishlistFilter };
+type WishlistEmptyItem = { id: "wishlist-empty"; kind: "wishlist-empty"; filter: WishlistFilter; isEmptyLibrary: boolean };
+
+function isWishlistToolbarItem(course: LibraryCourse | WishlistToolbarItem | WishlistEmptyItem): course is WishlistToolbarItem {
+  return "kind" in course && course.kind === "wishlist-toolbar";
+}
+
+function isWishlistEmptyItem(course: LibraryCourse | WishlistToolbarItem | WishlistEmptyItem): course is WishlistEmptyItem {
+  return "kind" in course && course.kind === "wishlist-empty";
+}
 
 const tabs = [
   { id: "wishlist", label: "マイリスト", Icon: Bookmark },
@@ -25,7 +36,28 @@ function minutesLabel(minutes: number) {
   return `${Number.isInteger(minutes) ? minutes : minutes.toFixed(1)}分`;
 }
 
-function LibraryItem({ course, type }: { course: LibraryCourse; type: "wishlist" | "progress" }) {
+function WishlistToolbar({ item }: { item: WishlistToolbarItem }) {
+  const search = useSearch();
+  const makeHref = (next: { sort?: WishlistSort; filter?: WishlistFilter }) => {
+    const params = new URLSearchParams(search);
+    params.set("tab", "wishlist");
+    params.set("wishlistSort", next.sort ?? item.sort);
+    params.set("wishlistFilter", next.filter ?? item.filter);
+    return `/mypage?${params.toString()}`;
+  };
+  const filterLabels: Array<{ id: WishlistFilter; label: string }> = [{ id: "all", label: "すべて" }, { id: "unwatched", label: "未視聴" }, { id: "inProgress", label: "視聴中" }];
+  return <section className="wishlist-toolbar" aria-label="マイリストの並び替えと絞り込み"><div className="wishlist-toolbar__header"><div><span className="eyebrow eyebrow--gold">SAVED FOR LATER</span><h3>保存した動画を整理する</h3></div><span>{item.filtered} / {item.total}講座</span></div><div className="wishlist-toolbar__controls"><label>並び替え<select value={item.sort} onChange={event => window.location.assign(makeHref({ sort: event.target.value as WishlistSort }))}><option value="savedNewest">保存日時が新しい順</option><option value="goalPriority">学習目標の優先度順</option></select></label><div className="wishlist-toolbar__filters" role="group" aria-label="視聴状態で絞り込む">{filterLabels.map(filter => <Link key={filter.id} href={makeHref({ filter: filter.id })} className={item.filter === filter.id ? "is-active" : ""}>{filter.label}</Link>)}</div></div>{item.total === 0 ? <p className="wishlist-toolbar__empty">気になる講座は、詳細ページまたはおすすめから「後で見る」へ保存できます。</p> : item.filtered === 0 ? <p className="wishlist-toolbar__empty">この条件に合う保存済み講座はありません。絞り込みを変更してください。</p> : null}</section>;
+}
+
+export function WishlistEmptyState({ item }: { item: WishlistEmptyItem }) {
+  const title = item.isEmptyLibrary ? "マイリストはまだ空です" : item.filter === "unwatched" ? "未視聴の保存講座はありません" : "視聴中の保存講座はありません";
+  const description = item.isEmptyLibrary ? "気になる講座を見つけたら、詳細ページまたはおすすめから後で見るへ保存できます。" : "絞り込みを変更すると、ほかの保存済み講座を確認できます。";
+  return <div className="library-empty library-empty--filtered"><LibraryBig size={26} /><h3>{title}</h3><p>{description}</p>{item.isEmptyLibrary && <Link href="/catalog" className="button-secondary"><Clock3 size={17} />講座を探す</Link>}</div>;
+}
+
+function LibraryItem({ course, type }: { course: LibraryCourse | WishlistToolbarItem | WishlistEmptyItem; type: "wishlist" | "progress" }) {
+  if (isWishlistToolbarItem(course)) return <WishlistToolbar item={course} />;
+  if (isWishlistEmptyItem(course)) return <WishlistEmptyState item={course} />;
   const progress = course.progressPercent ?? 0;
   return <Link href={`/courses/${course.slug}`} className="library-item"><CourseArtwork theme={course.thumbnailTheme} category={course.category.name} title={course.title} compact /><div className="library-item__main"><span className="eyebrow eyebrow--aqua">{course.category.name}</span><h3>{course.title}</h3><p>{course.doctor.name} ・ {course.durationMinutes}分</p>{type === "progress" && <><div className="progress-line progress-line--library"><span style={{ width: `${progress}%` }} /></div><small>{progress}% 視聴済み {course.completed ? "・完了" : ""}</small></>}</div><div className="library-item__side"><strong>{type === "progress" ? `${progress}%` : "保存済み"}</strong><span>{type === "progress" ? "続きから視聴" : "詳細を見る"}</span></div></Link>;
 }
@@ -104,8 +136,11 @@ export default function MyPage() {
   const queryParams = new URLSearchParams(search);
   const tabFromUrl = queryParams.get("tab");
   const activeTab = tabs.some(tab => tab.id === tabFromUrl) ? tabFromUrl! : "wishlist";
+  const wishlistSort: WishlistSort = queryParams.get("wishlistSort") === "goalPriority" ? "goalPriority" : "savedNewest";
+  const wishlistFilter: WishlistFilter = queryParams.get("wishlistFilter") === "unwatched" ? "unwatched" : queryParams.get("wishlistFilter") === "inProgress" ? "inProgress" : "all";
   const billingUpdated = queryParams.get("billing") === "updated" || queryParams.get("checkout") === "success";
   const dashboardPreview = import.meta.env.DEV ? queryParams.get("preview") : null;
+  const wishlistPreview = import.meta.env.DEV ? queryParams.get("wishlistPreview") : null;
   const libraryQuery = trpc.library.mine.useQuery(undefined, { enabled: isAuthenticated });
   const refreshSubscription = trpc.subscription.refresh.useMutation({ onSuccess: () => { libraryQuery.refetch(); } });
   const checkout = trpc.subscription.createCheckout.useMutation({ onSuccess: result => { if (result.alreadySubscribed) return toast.success("すでに加入済みです。"); const checkoutWindow = window.open(result.url!, "_blank", "noopener,noreferrer"); if (!checkoutWindow) window.location.assign(result.url!); toast.success("Stripeの安全な決済ページを新しいタブで開きました。"); }, onError: () => toast.error("決済ページを作成できませんでした。") });
@@ -113,12 +148,14 @@ export default function MyPage() {
 
   const library = libraryQuery.data;
   const wishlistCourses = (library?.wishlist ?? []) as LibraryCourse[];
+  const displayedWishlistCourses = wishlistPreview === "empty" ? [] : wishlistCourses;
   const progressCourses = (library?.progress ?? []) as LibraryCourse[];
   const availableCourses = (library?.availableCourses ?? []) as CourseSummary[];
   const recommendations = (library?.recommendations ?? []) as Recommendation[];
   const monthlyLearning = (library?.learningReport ?? []) as MonthlyLearningMetric[];
   const progressByCourseId = new Map(progressCourses.map(course => [course.id, course.progressPercent]));
-  const shownCourses = activeTab === "wishlist" ? wishlistCourses : progressCourses;
+  const visibleWishlist = getWishlistView(displayedWishlistCourses, (library?.learningGoals ?? []) as Array<{ goal: LearningGoalValue; priority: number }>, wishlistSort, wishlistFilter);
+  const shownCourses: Array<LibraryCourse | WishlistToolbarItem | WishlistEmptyItem> = activeTab === "wishlist" ? [{ id: "wishlist-toolbar", kind: "wishlist-toolbar", total: displayedWishlistCourses.length, filtered: visibleWishlist.length, sort: wishlistSort, filter: wishlistFilter }, ...(visibleWishlist.length ? visibleWishlist : [{ id: "wishlist-empty", kind: "wishlist-empty", filter: wishlistFilter, isEmptyLibrary: displayedWishlistCourses.length === 0 } as WishlistEmptyItem])] : progressCourses;
   const subscribed = dashboardPreview === "unsubscribed" ? false : library?.subscribed ?? false;
   const monthlyPrice = library?.monthlyPrice ?? 980;
   const cancellationScheduled = dashboardPreview === "active" ? false : library?.subscription?.cancelAtPeriodEnd ?? false;
