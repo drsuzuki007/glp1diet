@@ -18,8 +18,16 @@ export type CourseDetail = CourseSummary & {
   intendedFor: string;
   learningPoints: string;
   referencesText: string;
+  referenceLinks: CourseReferenceLink[];
   coiText: string;
   doctorProfile: string;
+};
+
+export type CourseReferenceLink = {
+  id: number;
+  label: string;
+  url: string;
+  sortOrder: number;
 };
 
 export const formatYen = (value: number) => `¥${new Intl.NumberFormat("ja-JP").format(value)}`;

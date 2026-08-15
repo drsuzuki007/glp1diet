@@ -71,6 +71,13 @@
       "when": 1786607042377,
       "tag": "0009_unknown_nightshade",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "5",
+      "when": 1786772926312,
+      "tag": "0010_low_shotgun",
+      "breakpoints": true
     }
   ]
 }

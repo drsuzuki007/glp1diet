@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, gte, inArray, like, lte, or } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { categories, courses, doctors, InsertUser, learningActivities, learningGoals, subscriptions, users, viewingProgress, wishlists } from "../drizzle/schema";
+import { categories, courseReferenceLinks, courses, doctors, InsertUser, learningActivities, learningGoals, subscriptions, users, viewingProgress, wishlists } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 import { ensureCatalogSeed } from "./seed";
 import { requireSubscriptionAccess, shouldApplyStripeEvent, StripeSubscriptionStatus, subscriptionAccessState } from "../shared/subscription";
@@ -180,7 +180,42 @@ export async function getCourseBySlug(slug: string) {
     coiText: courses.coiText,
     doctorProfile: doctors.profile,
   }).from(courses).innerJoin(categories, eq(courses.categoryId, categories.id)).innerJoin(doctors, eq(courses.doctorId, doctors.id)).where(eq(courses.slug, slug)).limit(1);
-  return result[0];
+  const course = result[0];
+  if (!course) return undefined;
+  const referenceLinks = await getCourseReferenceLinks(course.id, db);
+  return { ...course, referenceLinks };
+}
+
+export type CourseReferenceLinkInput = { label: string; url: string };
+
+async function getCourseReferenceLinks(courseId: number, dbOverride?: NonNullable<ReturnType<typeof drizzle>>) {
+  const db = dbOverride ?? await readyDb();
+  return db.select({
+    id: courseReferenceLinks.id,
+    label: courseReferenceLinks.label,
+    url: courseReferenceLinks.url,
+    sortOrder: courseReferenceLinks.sortOrder,
+  }).from(courseReferenceLinks).where(eq(courseReferenceLinks.courseId, courseId)).orderBy(asc(courseReferenceLinks.sortOrder));
+}
+
+export async function replaceCourseReferenceLinks(courseId: number, links: CourseReferenceLinkInput[]) {
+  if (links.length > 3) throw new Error("参考URLは1講座につき最大3件までです。");
+  const db = await readyDb();
+  const course = await db.select({ id: courses.id }).from(courses).where(eq(courses.id, courseId)).limit(1);
+  if (!course[0]) throw new Error("講座が見つかりません。");
+
+  await db.transaction(async tx => {
+    await tx.delete(courseReferenceLinks).where(eq(courseReferenceLinks.courseId, courseId));
+    if (links.length > 0) {
+      await tx.insert(courseReferenceLinks).values(links.map((link, index) => ({
+        courseId,
+        label: link.label.trim(),
+        url: link.url,
+        sortOrder: index + 1,
+      })));
+    }
+  });
+  return getCourseReferenceLinks(courseId, db);
 }
 
 export async function getFeaturedCourse() {

@@ -72,6 +72,20 @@ export const courses = mysqlTable("courses", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
+/** Curated public-information links for a course; the API limits each course to three links. */
+export const courseReferenceLinks = mysqlTable("course_reference_links", {
+  id: int("id").autoincrement().primaryKey(),
+  courseId: int("courseId").notNull().references(() => courses.id),
+  label: varchar("label", { length: 180 }).notNull(),
+  url: varchar("url", { length: 2048 }).notNull(),
+  sortOrder: int("sortOrder").default(1).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, table => [
+  uniqueIndex("course_reference_link_course_sort_unique").on(table.courseId, table.sortOrder),
+  index("course_reference_link_course_idx").on(table.courseId),
+]);
+
 export const wishlists = mysqlTable("wishlists", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull().references(() => users.id),
@@ -124,4 +138,5 @@ export type InsertUser = typeof users.$inferInsert;
 export type Category = typeof categories.$inferSelect;
 export type Doctor = typeof doctors.$inferSelect;
 export type Course = typeof courses.$inferSelect;
+export type CourseReferenceLink = typeof courseReferenceLinks.$inferSelect;
 export type Subscription = typeof subscriptions.$inferSelect;
