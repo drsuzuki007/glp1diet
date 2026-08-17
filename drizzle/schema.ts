@@ -38,6 +38,17 @@ export const categories = mysqlTable("categories", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
+/** Curated shelves displayed in the streaming-style catalog. */
+export const catalogRows = mysqlTable("catalog_rows", {
+  id: int("id").autoincrement().primaryKey(),
+  slug: varchar("slug", { length: 80 }).notNull().unique(),
+  name: varchar("name", { length: 100 }).notNull(),
+  description: varchar("description", { length: 220 }).notNull(),
+  sortOrder: int("sortOrder").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
 export const doctors = mysqlTable("doctors", {
   id: int("id").autoincrement().primaryKey(),
   slug: varchar("slug", { length: 64 }).notNull().unique(),
@@ -71,6 +82,21 @@ export const courses = mysqlTable("courses", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
+
+/** A course can appear on any number of curated catalog rows. */
+export const courseCatalogRows = mysqlTable("course_catalog_rows", {
+  id: int("id").autoincrement().primaryKey(),
+  rowId: int("rowId").notNull().references(() => catalogRows.id),
+  courseId: int("courseId").notNull().references(() => courses.id),
+  sortOrder: int("sortOrder").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, table => [
+  uniqueIndex("course_catalog_row_course_unique").on(table.rowId, table.courseId),
+  uniqueIndex("course_catalog_row_sort_unique").on(table.rowId, table.sortOrder),
+  index("course_catalog_row_row_idx").on(table.rowId),
+  index("course_catalog_row_course_idx").on(table.courseId),
+]);
 
 /** Curated public-information links for a course; the API limits each course to three links. */
 export const courseReferenceLinks = mysqlTable("course_reference_links", {
@@ -138,5 +164,7 @@ export type InsertUser = typeof users.$inferInsert;
 export type Category = typeof categories.$inferSelect;
 export type Doctor = typeof doctors.$inferSelect;
 export type Course = typeof courses.$inferSelect;
+export type CatalogRow = typeof catalogRows.$inferSelect;
+export type CourseCatalogRow = typeof courseCatalogRows.$inferSelect;
 export type CourseReferenceLink = typeof courseReferenceLinks.$inferSelect;
 export type Subscription = typeof subscriptions.$inferSelect;

@@ -45,6 +45,7 @@ export function SiteHeader() {
             {navItems.map(item => <Link key={item.href} href={item.href} className={location === item.href ? "is-active" : ""}>{item.label}</Link>)}
           </nav>
           <div className="header-actions">
+            {user?.role === "admin" && <Link href="/admin/catalog" className="admin-nav-link">管理</Link>}
             <button className="icon-button" onClick={() => setSearchOpen(true)} aria-label="講座を検索"><Search size={19} /></button>
             {!loading && (isAuthenticated ? (
               <button className="account-button" onClick={handleLogout} title={`${user?.name ?? "アカウント"}としてログイン中`}><LogOut size={16} /><span>ログアウト</span></button>
@@ -56,6 +57,7 @@ export function SiteHeader() {
         </div>
         {menuOpen && <nav className="mobile-nav" aria-label="モバイルナビゲーション">
           {navItems.map(item => <Link key={item.href} href={item.href} onClick={() => setMenuOpen(false)}>{item.label}</Link>)}
+          {user?.role === "admin" && <Link href="/admin/catalog" onClick={() => setMenuOpen(false)}>カタログ管理</Link>}
         </nav>}
       </header>
       {searchOpen && <div className="search-overlay" role="dialog" aria-modal="true" aria-label="講座を検索">

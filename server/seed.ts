@@ -8,6 +8,22 @@ const categorySeed = [
   { slug: "care-prep", name: "受診準備", description: "医療機関との対話に備える", sortOrder: 4 },
 ];
 
+const catalogRowSeed = [
+  { slug: "new-releases", name: "新着動画", description: "医学レビュー日と公開日を明示した最新の講座", sortOrder: 1 },
+  { slug: "glp1-obesity", name: "肥満症・GLP-1", description: "GLP-1と肥満症を基礎から学ぶ講座", sortOrder: 2 },
+  { slug: "diabetes-metabolism", name: "糖尿病・代謝", description: "血糖、健診結果、代謝について理解を深める講座", sortOrder: 3 },
+  { slug: "everyday-lifestyle", name: "食事・運動と生活習慣", description: "日常の選択を見直すための生活習慣講座", sortOrder: 4 },
+  { slug: "prepare-for-visit", name: "受診前に知っておきたいこと", description: "医療者との対話を準備するための講座", sortOrder: 5 },
+];
+
+const catalogRowMembershipSeed: Record<string, string[]> = {
+  "new-releases": ["food-habits", "lab-values-guide", "movement-routine", "long-term-routine", "medication-literacy", "obesity-basics", "heart-kidney-health", "diabetes-weight", "glp1-foundations", "visit-prep"],
+  "glp1-obesity": ["glp1-foundations", "medication-literacy", "obesity-basics", "diabetes-weight"],
+  "diabetes-metabolism": ["lab-values-guide", "diabetes-weight", "heart-kidney-health", "glp1-foundations"],
+  "everyday-lifestyle": ["food-habits", "movement-routine", "long-term-routine", "diabetes-weight"],
+  "prepare-for-visit": ["visit-prep", "lab-values-guide", "heart-kidney-health", "medication-literacy"],
+};
+
 const doctorSeed = [
   { slug: "risa-okada", name: "岡田 莉沙 医師", specialty: "内分泌・代謝内科", affiliation: "glp1.diet 医療教育センター", initials: "RO", profile: "内分泌・代謝領域の診療と、一般の方に向けた医療リテラシー教育に携わっています。個別の治療を勧めるのではなく、医師との対話に役立つ基礎知識をわかりやすく整理します。" },
   { slug: "haruto-kamiya", name: "神谷 陽斗 医師", specialty: "糖尿病・生活習慣病内科", affiliation: "glp1.diet 医療教育センター", initials: "HK", profile: "糖尿病と生活習慣病の診療経験をもとに、日常の選択を支える中立的な医療教育を行っています。自己判断を避け、必要なときに医療機関へ相談するための視点を大切にしています。" },
@@ -181,6 +197,19 @@ async function syncCatalogSeed(db: any) {
     await db.insert(schema.courseReferenceLinks).values(course.references.map((reference, index) => ({
       courseId, label: reference.label, url: reference.url, sortOrder: index + 1,
     })));
+  }
+
+  const existingRows = await db.select({ id: schema.catalogRows.id }).from(schema.catalogRows);
+  if (existingRows.length === 0) await db.insert(schema.catalogRows).values(catalogRowSeed);
+
+  const existingMemberships = await db.select({ id: schema.courseCatalogRows.id }).from(schema.courseCatalogRows);
+  if (existingMemberships.length === 0) {
+    const rows = await db.select({ id: schema.catalogRows.id, slug: schema.catalogRows.slug }).from(schema.catalogRows);
+    const rowIdBySlug = new Map<string, number>(rows.map((item: { slug: string; id: number }) => [item.slug, item.id]));
+    const memberships = Object.entries(catalogRowMembershipSeed).flatMap(([rowSlug, courseSlugs]) => courseSlugs.map((courseSlug, index) => ({
+      rowId: rowIdBySlug.get(rowSlug)!, courseId: courseIdBySlug.get(courseSlug)!, sortOrder: index + 1,
+    })));
+    await db.insert(schema.courseCatalogRows).values(memberships);
   }
 }
 

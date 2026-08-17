@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, gte, inArray, like, lte, or } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { categories, courseReferenceLinks, courses, doctors, InsertUser, learningActivities, learningGoals, subscriptions, users, viewingProgress, wishlists } from "../drizzle/schema";
+import { catalogRows, categories, courseCatalogRows, courseReferenceLinks, courses, doctors, InsertUser, learningActivities, learningGoals, subscriptions, users, viewingProgress, wishlists } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 import { ensureCatalogSeed } from "./seed";
 import { requireSubscriptionAccess, shouldApplyStripeEvent, StripeSubscriptionStatus, subscriptionAccessState } from "../shared/subscription";
@@ -222,6 +222,60 @@ export async function getFeaturedCourse() {
   const db = await readyDb();
   const result = await db.select(courseSelect).from(courses).innerJoin(categories, eq(courses.categoryId, categories.id)).innerJoin(doctors, eq(courses.doctorId, doctors.id)).where(eq(courses.isFeatured, true)).orderBy(desc(courses.publishedAt)).limit(1);
   return result[0];
+}
+
+export async function getStreamingCatalogRows() {
+  const db = await readyDb();
+  const [rows, memberships] = await Promise.all([
+    db.select({ id: catalogRows.id, slug: catalogRows.slug, name: catalogRows.name, description: catalogRows.description, sortOrder: catalogRows.sortOrder }).from(catalogRows).orderBy(asc(catalogRows.sortOrder)),
+    db.select({ rowId: courseCatalogRows.rowId, rowSortOrder: courseCatalogRows.sortOrder, ...courseSelect })
+      .from(courseCatalogRows)
+      .innerJoin(courses, eq(courseCatalogRows.courseId, courses.id))
+      .innerJoin(categories, eq(courses.categoryId, categories.id))
+      .innerJoin(doctors, eq(courses.doctorId, doctors.id))
+      .orderBy(asc(courseCatalogRows.rowId), asc(courseCatalogRows.sortOrder)),
+  ]);
+  const coursesByRow = new Map<number, typeof memberships>();
+  memberships.forEach(membership => {
+    const existing = coursesByRow.get(membership.rowId) ?? [];
+    existing.push(membership);
+    coursesByRow.set(membership.rowId, existing);
+  });
+  return rows.map(row => ({ ...row, courses: (coursesByRow.get(row.id) ?? []).map(({ rowId: _rowId, rowSortOrder: _rowSortOrder, ...course }) => course) }));
+}
+
+export async function getStreamingCatalogAdminData() {
+  const [rows, coursesForAssignment] = await Promise.all([getStreamingCatalogRows(), listCourses({ sort: "newest" })]);
+  return { rows, courses: coursesForAssignment };
+}
+
+export async function reorderStreamingCatalogRows(orderedRowIds: number[]) {
+  const db = await readyDb();
+  const existingRows = await db.select({ id: catalogRows.id }).from(catalogRows).orderBy(asc(catalogRows.sortOrder));
+  const existingIds = existingRows.map(row => row.id);
+  if (orderedRowIds.length !== existingIds.length || new Set(orderedRowIds).size !== orderedRowIds.length || orderedRowIds.some(id => !existingIds.includes(id))) throw new Error("カタログ行の並び順が不正です。");
+  await db.transaction(async tx => {
+    for (let index = 0; index < orderedRowIds.length; index += 1) await tx.update(catalogRows).set({ sortOrder: index + 1000 }).where(eq(catalogRows.id, orderedRowIds[index]!));
+    for (let index = 0; index < orderedRowIds.length; index += 1) await tx.update(catalogRows).set({ sortOrder: index + 1 }).where(eq(catalogRows.id, orderedRowIds[index]!));
+  });
+  return getStreamingCatalogRows();
+}
+
+export async function replaceStreamingCatalogRowCourses(rowId: number, orderedCourseIds: number[]) {
+  const db = await readyDb();
+  if (new Set(orderedCourseIds).size !== orderedCourseIds.length) throw new Error("同じ講座は1つの行に重複して登録できません。");
+  const [row, availableCourses] = await Promise.all([
+    db.select({ id: catalogRows.id }).from(catalogRows).where(eq(catalogRows.id, rowId)).limit(1),
+    db.select({ id: courses.id }).from(courses),
+  ]);
+  if (!row[0]) throw new Error("カタログ行が見つかりません。");
+  const availableIds = new Set(availableCourses.map(course => course.id));
+  if (orderedCourseIds.some(id => !availableIds.has(id))) throw new Error("指定された講座が見つかりません。");
+  await db.transaction(async tx => {
+    await tx.delete(courseCatalogRows).where(eq(courseCatalogRows.rowId, rowId));
+    if (orderedCourseIds.length > 0) await tx.insert(courseCatalogRows).values(orderedCourseIds.map((courseId, index) => ({ rowId, courseId, sortOrder: index + 1 })));
+  });
+  return getStreamingCatalogRows();
 }
 
 export async function getSubscriptionStatus(userId: number) {

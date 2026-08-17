@@ -12,11 +12,15 @@ import {
   addLearningGoal,
   getLearningGoals,
   getFeaturedCourse,
+  getStreamingCatalogAdminData,
+  getStreamingCatalogRows,
   getSubscriptionStatus,
   getUserLibrary,
   listCourses,
   removeLearningGoal,
   reorderLearningGoals,
+  reorderStreamingCatalogRows,
+  replaceStreamingCatalogRowCourses,
   toggleWishlist,
   updateCourseProgress,
 } from "./db";
@@ -42,6 +46,9 @@ export const courseReferenceLinksSchema = z.array(courseReferenceLinkSchema).max
   }
 });
 
+export const catalogRowOrderSchema = z.array(z.number().int().positive()).min(1);
+export const catalogRowCoursesSchema = z.object({ rowId: z.number().int().positive(), courseIds: z.array(z.number().int().positive()).max(200) });
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -55,6 +62,10 @@ export const appRouter = router({
   catalog: router({
     filters: publicProcedure.query(() => getCatalogFilters()),
     list: publicProcedure.input(courseFilterSchema.optional()).query(({ input }) => listCourses(input)),
+    rows: publicProcedure.query(() => getStreamingCatalogRows()),
+    adminRows: adminProcedure.query(() => getStreamingCatalogAdminData()),
+    reorderRows: adminProcedure.input(catalogRowOrderSchema).mutation(({ input }) => reorderStreamingCatalogRows(input)),
+    replaceRowCourses: adminProcedure.input(catalogRowCoursesSchema).mutation(({ input }) => replaceStreamingCatalogRowCourses(input.rowId, input.courseIds)),
     featured: publicProcedure.query(async () => {
       const course = await getFeaturedCourse();
       if (!course) throw new TRPCError({ code: "NOT_FOUND", message: "注目講座が見つかりません。" });
