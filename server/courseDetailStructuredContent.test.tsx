@@ -53,6 +53,8 @@ describe("CourseDetail structured content", () => {
 
     expect(screen.getByRole("heading", { name: "この動画で扱うこと" })).toBeTruthy();
     expect(screen.getAllByText("一般向けの要約です。")).toHaveLength(2);
+    expect(screen.getByRole("heading", { name: "無料プレビュー" })).toBeTruthy();
+    expect(screen.queryByRole("dialog", { name: "学習プレーヤー" })).toBeNull();
     expect(screen.getByRole("heading", { name: "この動画の要点" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "対象となる方" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "視聴後に得られる知識" })).toBeTruthy();
