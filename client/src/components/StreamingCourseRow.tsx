@@ -68,7 +68,7 @@ export function StreamingCourseRow({ row, showDescription = true }: { row: Strea
           <div className="streaming-course-card__body"><span>{course.category.name}</span><h3>{course.title}</h3><div><span><UserRound size={12} />{course.doctor.name.replace(" 医師", "")}</span><span><Clock3 size={12} />{course.durationMinutes}分</span></div></div>
         </Link>)}
       </div>
-      <button className={`streaming-row__arrow streaming-row__arrow--right ${scrollState.canMoveRight ? "is-available" : "is-unavailable"}`} type="button" onClick={() => scrollByPage(1)} aria-label={`${row.name}を右へスクロール`}><span>次へ</span><ChevronRight size={21} /></button>
+      <button className="streaming-row__arrow streaming-row__arrow--right is-available" type="button" onClick={() => scrollByPage(1)} aria-label={`${row.name}を右へスクロール`}><span>次へ</span><ChevronRight size={21} /></button>
     </div>
   </section>;
 }
