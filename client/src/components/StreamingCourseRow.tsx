@@ -9,6 +9,7 @@ type StreamingCatalogRow = { id: number; slug: string; name: string; description
 export function StreamingCourseRow({ row, showDescription = true }: { row: StreamingCatalogRow; showDescription?: boolean }) {
   const trackRef = useRef<HTMLDivElement>(null);
   const pointerStart = useRef<{ x: number; scrollLeft: number } | null>(null);
+  const suppressCardClick = useRef(false);
   const [isDragging, setIsDragging] = useState(false);
   const [scrollState, setScrollState] = useState({ canMoveLeft: false, canMoveRight: true });
 
@@ -41,20 +42,27 @@ export function StreamingCourseRow({ row, showDescription = true }: { row: Strea
   };
 
   const startDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
     pointerStart.current = { x: event.clientX, scrollLeft: event.currentTarget.scrollLeft };
+    suppressCardClick.current = false;
     event.currentTarget.setPointerCapture(event.pointerId);
-    setIsDragging(true);
   };
 
   const drag = (event: React.PointerEvent<HTMLDivElement>) => {
     if (!pointerStart.current) return;
-    event.currentTarget.scrollLeft = pointerStart.current.scrollLeft - (event.clientX - pointerStart.current.x);
+    const distance = event.clientX - pointerStart.current.x;
+    if (Math.abs(distance) > 7) {
+      suppressCardClick.current = true;
+      setIsDragging(true);
+      event.currentTarget.scrollLeft = pointerStart.current.scrollLeft - distance;
+    }
   };
 
   const stopDrag = (event: React.PointerEvent<HTMLDivElement>) => {
     pointerStart.current = null;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
     setIsDragging(false);
+    window.setTimeout(() => { suppressCardClick.current = false; }, 0);
   };
 
   if (row.courses.length === 0) return null;
@@ -63,7 +71,7 @@ export function StreamingCourseRow({ row, showDescription = true }: { row: Strea
     <div className="streaming-row__viewport">
       <button className={`streaming-row__arrow streaming-row__arrow--left ${scrollState.canMoveLeft ? "is-available" : "is-unavailable"}`} type="button" onClick={() => scrollByPage(-1)} aria-label={`${row.name}を左へスクロール`}><ChevronLeft size={21} /><span>戻る</span></button>
       <div ref={trackRef} className={`streaming-row__track ${isDragging ? "is-dragging" : ""}`} onScroll={syncScrollState} onWheel={event => { if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) { event.preventDefault(); event.currentTarget.scrollLeft += event.deltaY; } }} onPointerDown={startDrag} onPointerMove={drag} onPointerUp={stopDrag} onPointerCancel={stopDrag}>
-        {row.courses.map(course => <Link key={`${row.id}-${course.id}`} href={`/courses/${course.slug}`} className="streaming-course-card" draggable={false}>
+        {row.courses.map(course => <Link key={`${row.id}-${course.id}`} href={`/courses/${course.slug}`} className="streaming-course-card" draggable={false} onClick={event => { if (suppressCardClick.current) { event.preventDefault(); event.stopPropagation(); } }}>
           <div className="streaming-course-card__art"><CourseArtwork theme={course.thumbnailTheme} category={course.category.name} title={course.title} compact /><span className="streaming-course-card__play"><Play size={16} fill="currentColor" /></span></div>
           <div className="streaming-course-card__body"><span>{course.category.name}</span><h3>{course.title}</h3><div><span><UserRound size={12} />{course.doctor.name.replace(" 医師", "")}</span><span><Clock3 size={12} />{course.durationMinutes}分</span></div></div>
         </Link>)}
