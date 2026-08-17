@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { subscriptionCancellationScheduled, subscriptionPeriodEnd } from "./stripe";
+import { GLP1_MONTHLY_SUBSCRIPTION } from "./products";
 
 function subscriptionFixture(fields: Record<string, unknown>) {
   return {
@@ -11,6 +12,15 @@ function subscriptionFixture(fields: Record<string, unknown>) {
 }
 
 describe("Stripe subscription field mapping", () => {
+  it("defines the STANDARD plan as a 980-yen monthly subscription", () => {
+    expect(GLP1_MONTHLY_SUBSCRIPTION).toMatchObject({
+      name: "MediVista STANDARD",
+      amount: 980,
+      currency: "jpy",
+      interval: "month",
+    });
+  });
+
   it("uses the item-level period end returned by the current Stripe API", () => {
     const end = subscriptionPeriodEnd(subscriptionFixture({ items: { data: [{ current_period_end: 1789275288 }] } }));
     expect(end?.getTime()).toBe(1789275288000);

@@ -9,10 +9,6 @@ export function registerStripeWebhook(app: Express) {
     if (!webhookSecret) return res.status(500).json({ error: "Stripe webhook is not configured" });
     try {
       const event = stripe.webhooks.constructEvent(req.body, signature, webhookSecret);
-      if (event.id.startsWith("evt_test_")) {
-        console.log("[Webhook] Test event detected, returning verification response");
-        return res.json({ verified: true });
-      }
       await handleStripeEvent(event);
       console.log(`[Webhook] Processed ${event.type} (${event.id})`);
       return res.json({ received: true });

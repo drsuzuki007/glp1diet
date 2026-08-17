@@ -57,8 +57,8 @@ export async function createSubscriptionCheckout(input: { userId: number; origin
     mode: "subscription",
     customer: customerId,
     client_reference_id: user.id.toString(),
-    metadata: { user_id: user.id.toString(), customer_email: user.email ?? "", customer_name: user.name ?? "" },
-    subscription_data: { metadata: { user_id: user.id.toString(), customer_email: user.email ?? "", customer_name: user.name ?? "" } },
+    metadata: { user_id: user.id.toString(), plan: "standard", customer_email: user.email ?? "", customer_name: user.name ?? "" },
+    subscription_data: { metadata: { user_id: user.id.toString(), plan: "standard", customer_email: user.email ?? "", customer_name: user.name ?? "" } },
     line_items: [{
       price_data: {
         currency: GLP1_MONTHLY_SUBSCRIPTION.currency,
@@ -69,8 +69,8 @@ export async function createSubscriptionCheckout(input: { userId: number; origin
       quantity: 1,
     }],
     allow_promotion_codes: true,
-    success_url: `${origin}/mypage?checkout=success`,
-    cancel_url: `${origin}/mypage?checkout=cancelled`,
+    success_url: `${origin}/subscription/success?session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${origin}/pricing?checkout=cancelled`,
   });
   if (!session.url) throw new Error("Stripe CheckoutのURLを作成できませんでした。");
   return { alreadySubscribed: false as const, url: session.url };
@@ -79,8 +79,48 @@ export async function createSubscriptionCheckout(input: { userId: number; origin
 export async function createBillingPortal(input: { userId: number; origin?: string }) {
   const origin = originFromRequest(input.origin);
   const { customerId } = await ensureStripeCustomer(input.userId);
-  const session = await stripe.billingPortal.sessions.create({ customer: customerId, return_url: `${origin}/mypage?billing=updated` });
+  const session = await stripe.billingPortal.sessions.create({ customer: customerId, return_url: `${origin}/account/subscription?billing=updated` });
   return { url: session.url };
+}
+
+export async function scheduleStripeSubscriptionCancellation(input: { userId: number }) {
+  const localStatus = await getSubscriptionStatus(input.userId);
+  const subscriptionId = localStatus.subscription?.stripeSubscriptionId;
+  if (!subscriptionId) throw new Error("解約対象の契約が見つかりません。");
+  const updated = await stripe.subscriptions.update(subscriptionId, { cancel_at_period_end: true });
+  await syncSubscriptionFromStripe(updated);
+  return getSubscriptionStatus(input.userId);
+}
+
+export async function getStripeBillingSummary(input: { userId: number }) {
+  const [user, localStatus] = await Promise.all([getUserById(input.userId), getSubscriptionStatus(input.userId)]);
+  const plan = localStatus.subscribed ? "standard" as const : "free" as const;
+  if (!user?.stripeCustomerId) return { ...localStatus, plan, cardLast4: null, cardBrand: null, invoices: [] };
+
+  const [customer, invoiceList] = await Promise.all([
+    stripe.customers.retrieve(user.stripeCustomerId),
+    stripe.invoices.list({ customer: user.stripeCustomerId, limit: 12 }),
+  ]);
+  const paymentMethodId = !customer.deleted ? customer.invoice_settings.default_payment_method : null;
+  const paymentMethod = paymentMethodId
+    ? await stripe.paymentMethods.retrieve(typeof paymentMethodId === "string" ? paymentMethodId : paymentMethodId.id)
+    : null;
+  const card = paymentMethod?.card;
+  return {
+    ...localStatus,
+    plan,
+    cardLast4: card?.last4 ?? null,
+    cardBrand: card?.brand ?? null,
+    invoices: invoiceList.data.map(invoice => ({
+      id: invoice.id,
+      createdAt: new Date(invoice.created * 1000),
+      amountPaid: invoice.amount_paid,
+      currency: invoice.currency,
+      status: invoice.status,
+      hostedInvoiceUrl: invoice.hosted_invoice_url,
+      invoicePdf: invoice.invoice_pdf,
+    })),
+  };
 }
 
 async function userIdForSubscription(subscription: Stripe.Subscription) {
@@ -130,6 +170,13 @@ export async function handleStripeEvent(event: Stripe.Event) {
     return;
   }
   if (event.type === "invoice.paid") {
+    const invoice = event.data.object as Stripe.Invoice;
+    const raw = invoice as unknown as { subscription?: string | Stripe.Subscription | null };
+    const subscriptionId = stripeId(raw.subscription ?? null);
+    if (subscriptionId) await syncSubscriptionFromStripe(await stripe.subscriptions.retrieve(subscriptionId), new Date(event.created * 1000));
+    return;
+  }
+  if (event.type === "invoice.payment_failed") {
     const invoice = event.data.object as Stripe.Invoice;
     const raw = invoice as unknown as { subscription?: string | Stripe.Subscription | null };
     const subscriptionId = stripeId(raw.subscription ?? null);

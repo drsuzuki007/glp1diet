@@ -24,7 +24,7 @@ import {
   toggleWishlist,
   updateCourseProgress,
 } from "./db";
-import { createBillingPortal, createSubscriptionCheckout, refreshStripeSubscription } from "./stripe";
+import { createBillingPortal, createSubscriptionCheckout, getStripeBillingSummary, refreshStripeSubscription, scheduleStripeSubscriptionCancellation } from "./stripe";
 
 export const courseFilterSchema = z.object({
   search: z.string().trim().max(120).optional(),
@@ -83,9 +83,11 @@ export const appRouter = router({
   }),
   subscription: router({
     mine: protectedProcedure.query(({ ctx }) => getSubscriptionStatus(ctx.user.id)),
+    billingSummary: protectedProcedure.query(({ ctx }) => getStripeBillingSummary({ userId: ctx.user.id })),
     refresh: protectedProcedure.mutation(({ ctx }) => refreshStripeSubscription(ctx.user.id)),
     createCheckout: protectedProcedure.mutation(({ ctx }) => createSubscriptionCheckout({ userId: ctx.user.id, origin: ctx.req.headers.origin })),
     createBillingPortal: protectedProcedure.mutation(({ ctx }) => createBillingPortal({ userId: ctx.user.id, origin: ctx.req.headers.origin })),
+    scheduleCancellation: protectedProcedure.mutation(({ ctx }) => scheduleStripeSubscriptionCancellation({ userId: ctx.user.id })),
   }),
   library: router({
     mine: protectedProcedure.query(({ ctx }) => getUserLibrary(ctx.user.id)),

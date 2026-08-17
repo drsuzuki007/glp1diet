@@ -85,6 +85,13 @@
       "when": 1786931439756,
       "tag": "0011_true_clea",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "5",
+      "when": 1786970000696,
+      "tag": "0012_minor_lady_bullseye",
+      "breakpoints": true
     }
   ]
 }

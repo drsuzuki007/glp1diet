@@ -96,6 +96,12 @@ export async function syncStripeSubscription(input: {
   } else {
     await db.insert(subscriptions).values({ userId: input.userId, monthlyPrice: SUBSCRIPTION_PRICE_YEN, ...values });
   }
+  const hasStandardAccess = input.status === "active" || input.status === "trialing";
+  await db.update(users).set({
+    plan: hasStandardAccess ? "standard" : "free",
+    subscriptionStatus: input.status,
+    currentPeriodEnd: input.currentPeriodEnd,
+  }).where(eq(users.id, input.userId));
   return true;
 }
 

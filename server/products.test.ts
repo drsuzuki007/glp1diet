@@ -7,7 +7,7 @@ describe("GLP1 monthly Stripe product", () => {
       amount: 980,
       currency: "jpy",
       interval: "month",
-      name: "glp1.diet 全講座見放題",
+      name: "MediVista STANDARD",
     });
   });
 });

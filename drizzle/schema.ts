@@ -6,6 +6,10 @@ export const users = mysqlTable("users", {
   name: text("name"),
   email: varchar("email", { length: 320 }),
   stripeCustomerId: varchar("stripeCustomerId", { length: 255 }).unique(),
+  /** Current entitlement summary. Stripe subscription events update these fields. */
+  plan: mysqlEnum("plan", ["free", "standard", "premium"]).default("free").notNull(),
+  subscriptionStatus: mysqlEnum("subscriptionStatus", ["active", "trialing", "past_due", "unpaid", "canceled", "incomplete", "incomplete_expired", "paused"]).default("incomplete").notNull(),
+  currentPeriodEnd: timestamp("currentPeriodEnd"),
   loginMethod: varchar("loginMethod", { length: 64 }),
   role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -23,6 +27,7 @@ export const subscriptions = mysqlTable("subscriptions", {
   stripeEventCreatedAt: timestamp("stripeEventCreatedAt"),
   currentPeriodEnd: timestamp("currentPeriodEnd"),
   cancelAtPeriodEnd: boolean("cancelAtPeriodEnd").default(false).notNull(),
+  plan: mysqlEnum("plan", ["standard"]).default("standard").notNull(),
   monthlyPrice: int("monthlyPrice").default(980).notNull(),
   startedAt: timestamp("startedAt").defaultNow().notNull(),
   renewedAt: timestamp("renewedAt").defaultNow().notNull(),

@@ -8,6 +8,7 @@ const navItems = [
   { href: "/", label: "ホーム" },
   { href: "/catalog", label: "動画を探す" },
   { href: "/catalog?category=glp1-basics", label: "テーマ別" },
+  { href: "/pricing", label: "料金プラン" },
   { href: "/mypage?tab=wishlist", label: "マイリスト" },
   { href: "/mypage", label: "加入状況" },
 ];
@@ -77,8 +78,8 @@ export function SiteFooter() {
   return <footer className="site-footer">
     <div className="site-footer__grid">
       <section><Link href="/" className="brand brand--footer"><span className="brand__mark"><BookOpenCheck size={20} /></span><span><b>glp1.diet</b><small>MEDICAL EDUCATION</small></span></Link><p>GLP-1、糖代謝、生活習慣を、医師制作・監修の一般向け教育講座で学ぶための動画サービスです。</p><small>月額サブスクリプションで全講座を視聴できます。個別の診療・処方・効果保証は行いません。</small></section>
-      <section><span className="footer-label">サービス</span><Link href="/catalog">動画を探す</Link><Link href="/mypage">マイページ</Link><Link href="/for-doctors">制作医師の方へ</Link></section>
-      <section><span className="footer-label">ポリシー</span><Link href="/terms">利用規約</Link><Link href="/privacy">プライバシーポリシー</Link><Link href="/commercial">特定商取引法に基づく表記</Link><Link href="/medical-disclaimer">医療情報に関する免責</Link></section>
+      <section><span className="footer-label">サービス</span><Link href="/catalog">動画を探す</Link><Link href="/pricing">料金プラン</Link><Link href="/account/subscription">契約管理</Link><Link href="/mypage">マイページ</Link><Link href="/for-doctors">制作医師の方へ</Link></section>
+      <section><span className="footer-label">ポリシー</span><Link href="/terms">利用規約</Link><Link href="/privacy">プライバシーポリシー</Link><Link href="/commercial">特定商取引法に基づく表記</Link><Link href="/help">ヘルプ・解約方法</Link><Link href="/medical-disclaimer">医療情報に関する免責</Link></section>
     </div>
     <div className="site-footer__bottom"><span>© 2026 glp1.diet. All rights reserved.</span><span>医療教育情報を、確かな理解へ。</span></div>
   </footer>;
