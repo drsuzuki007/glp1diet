@@ -53,6 +53,11 @@ async function startServer() {
     serveStatic(app);
   }
 
+  app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    console.error("[Server] Unhandled request error", error);
+    if (!res.headersSent) res.status(500).send("Internal Server Error");
+  });
+
   const preferredPort = parseInt(process.env.PORT || "3000");
   const port = await findAvailablePort(preferredPort);
 
