@@ -34,6 +34,44 @@ export const subscriptions = mysqlTable("subscriptions", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 }, table => [uniqueIndex("subscription_user_unique").on(table.userId)]);
 
+/** Organization subscription contract created by the Stripe team-plan webhook. */
+export const teams = mysqlTable("teams", {
+  id: int("id").autoincrement().primaryKey(),
+  teamName: varchar("teamName", { length: 180 }).notNull(),
+  adminEmail: varchar("adminEmail", { length: 320 }).notNull(),
+  stripeCustomerId: varchar("stripeCustomerId", { length: 255 }).notNull(),
+  stripeSubscriptionId: varchar("stripeSubscriptionId", { length: 255 }).notNull().unique(),
+  seatCount: int("seatCount").notNull(),
+  accessCode: varchar("accessCode", { length: 32 }).notNull().unique(),
+  status: mysqlEnum("status", ["active", "canceled"]).default("active").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, table => [
+  index("team_admin_email_idx").on(table.adminEmail),
+  uniqueIndex("team_stripe_customer_unique").on(table.stripeCustomerId),
+]);
+
+/** A learner can join only one active organization at a time. */
+export const teamMembers = mysqlTable("team_members", {
+  id: int("id").autoincrement().primaryKey(),
+  teamId: int("teamId").notNull().references(() => teams.id),
+  userId: int("userId").notNull().references(() => users.id),
+  joinedAt: timestamp("joinedAt").defaultNow().notNull(),
+}, table => [
+  uniqueIndex("team_member_team_user_unique").on(table.teamId, table.userId),
+  uniqueIndex("team_member_user_unique").on(table.userId),
+  index("team_member_team_idx").on(table.teamId),
+]);
+
+/** Persistent rate-limit counter for team-code attempts per signed-in learner. */
+export const teamCodeAttempts = mysqlTable("team_code_attempts", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().references(() => users.id).unique(),
+  attemptCount: int("attemptCount").default(0).notNull(),
+  windowStartedAt: timestamp("windowStartedAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
 export const categories = mysqlTable("categories", {
   id: int("id").autoincrement().primaryKey(),
   slug: varchar("slug", { length: 64 }).notNull().unique(),
@@ -83,6 +121,8 @@ export const courses = mysqlTable("courses", {
   reviewedAt: timestamp("reviewedAt").notNull(),
   thumbnailTheme: varchar("thumbnailTheme", { length: 32 }).default("cyan").notNull(),
   previewLabel: varchar("previewLabel", { length: 120 }).notNull(),
+  /** Vimeo video identifier. Kept empty until the owner configures a domain-restricted embed. */
+  vimeoId: varchar("vimeoId", { length: 40 }),
   isFeatured: boolean("isFeatured").default(false).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -173,3 +213,5 @@ export type CatalogRow = typeof catalogRows.$inferSelect;
 export type CourseCatalogRow = typeof courseCatalogRows.$inferSelect;
 export type CourseReferenceLink = typeof courseReferenceLinks.$inferSelect;
 export type Subscription = typeof subscriptions.$inferSelect;
+export type Team = typeof teams.$inferSelect;
+export type TeamMember = typeof teamMembers.$inferSelect;

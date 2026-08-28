@@ -24,7 +24,8 @@ import {
   toggleWishlist,
   updateCourseProgress,
 } from "./db";
-import { createBillingPortal, createSubscriptionCheckout, getStripeBillingSummary, refreshStripeSubscription, scheduleStripeSubscriptionCancellation } from "./stripe";
+import { createBillingPortal, createSubscriptionCheckout, createTeamBillingPortal, getStripeBillingSummary, refreshStripeSubscription, scheduleStripeSubscriptionCancellation } from "./stripe";
+import { getTeamAdminDashboard, getTeamForMember, joinTeamWithAccessCode, removeTeamMemberByAdmin } from "./teams";
 
 export const courseFilterSchema = z.object({
   search: z.string().trim().max(120).optional(),
@@ -48,6 +49,7 @@ export const courseReferenceLinksSchema = z.array(courseReferenceLinkSchema).max
 
 export const catalogRowOrderSchema = z.array(z.number().int().positive()).min(1);
 export const catalogRowCoursesSchema = z.object({ rowId: z.number().int().positive(), courseIds: z.array(z.number().int().positive()).max(200) });
+export const teamAccessCodeSchema = z.string().trim().toUpperCase().regex(/^TEAM-[A-Z0-9]{4}-[A-Z0-9]{4}$/, "チームコードの形式を確認してください。");
 
 export const appRouter = router({
   system: systemRouter,
@@ -88,6 +90,14 @@ export const appRouter = router({
     createCheckout: protectedProcedure.mutation(({ ctx }) => createSubscriptionCheckout({ userId: ctx.user.id, origin: ctx.req.headers.origin })),
     createBillingPortal: protectedProcedure.mutation(({ ctx }) => createBillingPortal({ userId: ctx.user.id, origin: ctx.req.headers.origin })),
     scheduleCancellation: protectedProcedure.mutation(({ ctx }) => scheduleStripeSubscriptionCancellation({ userId: ctx.user.id })),
+  }),
+  team: router({
+    paymentLink: publicProcedure.query(() => ({ url: process.env.STRIPE_TEAM_PAYMENT_LINK_URL ?? null })),
+    mine: protectedProcedure.query(({ ctx }) => getTeamForMember(ctx.user.id)),
+    join: protectedProcedure.input(teamAccessCodeSchema).mutation(({ ctx, input }) => joinTeamWithAccessCode(ctx.user.id, input)),
+    admin: protectedProcedure.query(({ ctx }) => getTeamAdminDashboard(ctx.user.id)),
+    removeMember: protectedProcedure.input(z.object({ memberId: z.number().int().positive() })).mutation(({ ctx, input }) => removeTeamMemberByAdmin({ adminUserId: ctx.user.id, memberId: input.memberId })),
+    createBillingPortal: protectedProcedure.mutation(({ ctx }) => createTeamBillingPortal({ userId: ctx.user.id, origin: ctx.req.headers.origin })),
   }),
   library: router({
     mine: protectedProcedure.query(({ ctx }) => getUserLibrary(ctx.user.id)),

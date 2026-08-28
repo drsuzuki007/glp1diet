@@ -1,6 +1,7 @@
 import Stripe from "stripe";
 import { GLP1_MONTHLY_SUBSCRIPTION } from "./products";
 import { getSubscriptionStatus, getUserById, getUserByStripeCustomerId, setStripeCustomerId, syncStripeSubscription } from "./db";
+import { getTeamAdminDashboard, syncTeamSubscription, upsertTeamFromStripe } from "./teams";
 import type { StripeSubscriptionStatus } from "../shared/subscription";
 
 const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
@@ -33,6 +34,21 @@ export function subscriptionCancellationScheduled(subscription: Stripe.Subscript
 
 function toLocalStatus(status: Stripe.Subscription.Status): StripeSubscriptionStatus {
   return status as StripeSubscriptionStatus;
+}
+
+export function subscriptionSeatCount(subscription: Stripe.Subscription) {
+  return Math.max(1, Math.min(999, subscription.items.data[0]?.quantity ?? 1));
+}
+
+export function isTeamSubscription(subscription: Stripe.Subscription) {
+  return subscription.metadata.billing_plan === "team" || subscription.metadata.managed_by === "medivista_team_plan";
+}
+
+async function teamAdminEmail(session: Stripe.Checkout.Session, customerId: string) {
+  if (session.customer_details?.email) return session.customer_details.email;
+  if (session.customer_email) return session.customer_email;
+  const customer = await stripe.customers.retrieve(customerId);
+  return customer.deleted ? null : customer.email;
 }
 
 async function ensureStripeCustomer(userId: number) {
@@ -80,6 +96,17 @@ export async function createBillingPortal(input: { userId: number; origin?: stri
   const origin = originFromRequest(input.origin);
   const { customerId } = await ensureStripeCustomer(input.userId);
   const session = await stripe.billingPortal.sessions.create({ customer: customerId, return_url: `${origin}/account/subscription?billing=updated` });
+  return { url: session.url };
+}
+
+export async function createTeamBillingPortal(input: { userId: number; origin?: string }) {
+  const origin = originFromRequest(input.origin);
+  const dashboard = await getTeamAdminDashboard(input.userId);
+  if (!dashboard) throw new Error("チーム管理者の契約が見つかりません。");
+  const session = await stripe.billingPortal.sessions.create({
+    customer: dashboard.team.stripeCustomerId,
+    return_url: `${origin}/team/manage?billing=updated`,
+  });
   return { url: session.url };
 }
 
@@ -157,15 +184,40 @@ export async function refreshStripeSubscription(userId: number) {
 
 export async function handleStripeEvent(event: Stripe.Event) {
   if (event.type.startsWith("customer.subscription.")) {
-    await syncSubscriptionFromStripe(event.data.object as Stripe.Subscription, new Date(event.created * 1000));
+    const subscription = event.data.object as Stripe.Subscription;
+    if (isTeamSubscription(subscription)) {
+      await syncTeamSubscription({
+        stripeSubscriptionId: subscription.id,
+        seatCount: subscriptionSeatCount(subscription),
+        status: event.type === "customer.subscription.deleted" ? "canceled" : "active",
+      });
+      return;
+    }
+    await syncSubscriptionFromStripe(subscription, new Date(event.created * 1000));
     return;
   }
   if (event.type === "checkout.session.completed") {
     const session = event.data.object as Stripe.Checkout.Session;
-    const userId = Number(session.client_reference_id ?? session.metadata?.user_id);
-    const customerId = stripeId(session.customer);
-    if (Number.isInteger(userId) && userId > 0 && customerId) await setStripeCustomerId(userId, customerId);
     const subscriptionId = stripeId(session.subscription);
+    const customerId = stripeId(session.customer);
+    if (subscriptionId && customerId) {
+      const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+      if (isTeamSubscription(subscription)) {
+        const adminEmail = await teamAdminEmail(session, customerId);
+        if (!adminEmail) throw new Error("チーム管理者のメールアドレスを確認できませんでした。");
+        await upsertTeamFromStripe({
+          teamName: session.customer_details?.name,
+          adminEmail,
+          stripeCustomerId: customerId,
+          stripeSubscriptionId: subscription.id,
+          seatCount: subscriptionSeatCount(subscription),
+          status: "active",
+        });
+        return;
+      }
+    }
+    const userId = Number(session.client_reference_id ?? session.metadata?.user_id);
+    if (Number.isInteger(userId) && userId > 0 && customerId) await setStripeCustomerId(userId, customerId);
     if (subscriptionId) await syncSubscriptionFromStripe(await stripe.subscriptions.retrieve(subscriptionId), new Date(event.created * 1000));
     return;
   }

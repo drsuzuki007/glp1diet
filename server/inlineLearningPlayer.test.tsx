@@ -43,4 +43,12 @@ describe("InlineLearningPlayer", () => {
     expect(screen.getByText("加入すると、再生位置をマイページへ保存できます。")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "現在の位置を保存" })).toBeNull();
   });
+
+  it("embeds Vimeo in-page only for a viewer with access to a Vimeo-configured course", () => {
+    render(<InlineLearningPlayer title="チーム向け講座" category="GLP-1の基礎" src="/preview.mp4" vimeoId="123456789" canSaveProgress />);
+    const player = screen.getByTitle("チーム向け講座の学習動画") as HTMLIFrameElement;
+    expect(player.src).toContain("player.vimeo.com/video/123456789");
+    expect(screen.queryByLabelText("再生位置")).toBeNull();
+    expect(screen.getByText(/Vimeoのページ内プレーヤー/)).toBeTruthy();
+  });
 });

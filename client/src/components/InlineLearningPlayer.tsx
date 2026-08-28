@@ -7,6 +7,7 @@ type InlineLearningPlayerProps = {
   title: string;
   category: string;
   src: string;
+  vimeoId?: string | null;
   initialPositionSeconds?: number;
   initialProgressPercent?: number;
   canSaveProgress: boolean;
@@ -24,6 +25,7 @@ export function InlineLearningPlayer({
   title,
   category,
   src,
+  vimeoId,
   initialPositionSeconds = 0,
   initialProgressPercent = 0,
   canSaveProgress,
@@ -38,6 +40,7 @@ export function InlineLearningPlayer({
   const [isMuted, setIsMuted] = useState(false);
   const [captionsEnabled, setCaptionsEnabled] = useState(false);
   const [playbackRate, setPlaybackRate] = useState("1");
+  const usesVimeo = canSaveProgress && Boolean(vimeoId);
 
   const progressPercent = duration > 0 ? Math.min(100, Math.round((currentTime / duration) * 100)) : initialProgressPercent;
 
@@ -104,10 +107,10 @@ export function InlineLearningPlayer({
   return <section className="inline-learning-player" id="learning-player" aria-labelledby="learning-player-title">
     <div className="inline-learning-player__heading">
       <div><span className="eyebrow eyebrow--gold">LEARNING PLAYER</span><h2 id="learning-player-title">{canSaveProgress ? "学習プレーヤー" : "無料プレビュー"}</h2></div>
-      <span className={`inline-learning-player__access ${canSaveProgress ? "is-active" : ""}`}>{canSaveProgress ? "加入中・進捗を保存できます" : "無料プレビュー"}</span>
+      <span className={`inline-learning-player__access ${canSaveProgress ? "is-active" : ""}`}>{usesVimeo ? "加入中・Vimeoで視聴できます" : canSaveProgress ? "加入中・進捗を保存できます" : "無料プレビュー"}</span>
     </div>
     <div className="inline-learning-player__frame">
-      <video
+      {usesVimeo ? <iframe className="inline-learning-player__vimeo" src={`https://player.vimeo.com/video/${encodeURIComponent(vimeoId!)}?dnt=1&title=0&byline=0&portrait=0`} title={`${title}の学習動画`} allow="autoplay; fullscreen; picture-in-picture" allowFullScreen /> : <video
         ref={videoRef}
         className="inline-learning-player__video"
         src={src}
@@ -129,16 +132,16 @@ export function InlineLearningPlayer({
         onVolumeChange={event => { setVolume(event.currentTarget.volume); setIsMuted(event.currentTarget.muted); }}
       >
         <track kind="captions" srcLang="ja" label="日本語（補助字幕）" src="/learning-preview-ja.vtt" />
-      </video>
-      {!isPlaying && <button className="inline-learning-player__center-play" type="button" onClick={togglePlayback} aria-label="再生する"><Play size={28} fill="currentColor" /></button>}
+      </video>}
+      {!usesVimeo && !isPlaying && <button className="inline-learning-player__center-play" type="button" onClick={togglePlayback} aria-label="再生する"><Play size={28} fill="currentColor" /></button>}
       <div className="inline-learning-player__context"><span>{category}</span><strong>{title}</strong></div>
     </div>
-    <div className="inline-learning-player__controls">
+    {!usesVimeo ? <div className="inline-learning-player__controls">
       <div className="inline-learning-player__timeline"><span>{formatTime(currentTime)}</span><input aria-label="再生位置" type="range" min="0" max={duration || 1} value={Math.min(currentTime, duration || 1)} step="0.1" onChange={event => seek(Number(event.target.value))} /><span>{formatTime(duration)}</span></div>
       <div className="inline-learning-player__action-row">
         <div className="inline-learning-player__core-actions"><button type="button" onClick={togglePlayback} aria-label={isPlaying ? "一時停止する" : "再生する"}>{isPlaying ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" />}</button><div className="inline-learning-player__volume"><button type="button" onClick={toggleMute} aria-label={isMuted ? "ミュートを解除する" : "ミュートする"}>{isMuted || volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}</button><input aria-label="音量" type="range" min="0" max="1" value={isMuted ? 0 : volume} step="0.05" onChange={event => changeVolume(Number(event.target.value))} /></div><button type="button" className={captionsEnabled ? "is-selected" : ""} onClick={toggleCaptions} aria-pressed={captionsEnabled} aria-label="字幕を切り替える"><Captions size={18} /><span>字幕</span></button><label className="inline-learning-player__rate"><span className="sr-only">再生速度</span><select aria-label="再生速度" value={playbackRate} onChange={event => setRate(event.target.value)}><option value="0.75">0.75×</option><option value="1">1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="2">2×</option></select></label><button type="button" onClick={() => void enterFullscreen()} aria-label="全画面表示"><Expand size={18} /></button></div>
         {canSaveProgress && onSaveProgress ? <button className="inline-learning-player__save" type="button" onClick={() => onSaveProgress({ positionSeconds: Math.round(currentTime), progressPercent })} disabled={isSavingProgress}><Save size={16} />{isSavingProgress ? "保存中…" : "現在の位置を保存"}</button> : <p className="inline-learning-player__preview-note">加入すると、再生位置をマイページへ保存できます。</p>}
       </div>
-    </div>
+    </div> : <p className="inline-learning-player__vimeo-note">この講座はVimeoのページ内プレーヤーで視聴できます。字幕・再生速度・全画面などの設定はプレーヤー右下のメニューから変更できます。</p>}
   </section>;
 }

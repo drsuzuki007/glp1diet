@@ -15,6 +15,9 @@ import NotFound from "./pages/NotFound";
 import Pricing from "./pages/Pricing";
 import SubscriptionAccount from "./pages/SubscriptionAccount";
 import SubscriptionSuccess from "./pages/SubscriptionSuccess";
+import TeamJoin from "./pages/TeamJoin";
+import TeamManage from "./pages/TeamManage";
+import TeamSuccess from "./pages/TeamSuccess";
 
 function PostLoginRedirect() {
   const { isAuthenticated, loading } = useAuth();
@@ -38,6 +41,9 @@ function Router() {
     <Route path="/pricing" component={Pricing} />
     <Route path="/account/subscription" component={SubscriptionAccount} />
     <Route path="/subscription/success" component={SubscriptionSuccess} />
+    <Route path="/team/join" component={TeamJoin} />
+    <Route path="/team/manage" component={TeamManage} />
+    <Route path="/team/success" component={TeamSuccess} />
     <Route path="/for-doctors" component={InfoPage} />
     <Route path="/terms" component={InfoPage} />
     <Route path="/privacy" component={InfoPage} />
