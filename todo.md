@@ -150,3 +150,4 @@
 - [x] チーム申込完了案内の最新修正をGitHubのdrsuzuki007/glp1dietリポジトリへ同期する
 - [x] 保留したStripe実機検証とVimeo設定を再開するための非機密運用チェックリストを作成する
 - [x] ManusとGitHubのdrsuzuki007/glp1dietの最新コミットを再照合し、未同期の変更をGitHubへ反映する
+- [x] ManusのGitHub連携用リモートをdrsuzuki007/glp1dietへ統一し、対象リポジトリとの同期状態を確認する
