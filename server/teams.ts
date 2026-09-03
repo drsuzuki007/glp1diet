@@ -1,4 +1,3 @@
-import { randomBytes } from "node:crypto";
 import { and, asc, eq } from "drizzle-orm";
 import { teamCodeAttempts, teamMembers, teams, users } from "../drizzle/schema";
 import { getDb, getUserById } from "./db";
@@ -19,8 +18,10 @@ function normalizeTeamCode(accessCode: string) {
 }
 
 function createAccessCode() {
-  const chunk = () => randomBytes(3).toString("hex").slice(0, 4).toUpperCase();
-  return `TEAM-${chunk()}-${chunk()}`;
+  // Web Crypto so the same code runs on Workers, in Node and in tests.
+  const bytes = crypto.getRandomValues(new Uint8Array(6));
+  const hex = Array.from(bytes, byte => byte.toString(16).padStart(2, "0")).join("").toUpperCase();
+  return `TEAM-${hex.slice(0, 4)}-${hex.slice(6, 10)}`;
 }
 
 async function activeTeamMembership(db: TeamDatabase, userId: number) {

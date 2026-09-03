@@ -1,32 +1,28 @@
-import { OAUTH_STATE_COOKIE, encodeOAuthState } from "@shared/const";
-
 export { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 
-// Start the Manus OAuth login. Call this from an event handler or effect at the
-// moment you want to navigate, e.g. `onClick={() => startLogin()}`.
-//
-// It has SIDE EFFECTS — it mints a one-time nonce, writes the __Host- state
-// cookie, and navigates immediately — so the cookie nonce always matches the
-// `state` it sends. Do NOT call it during render (no `href={startLogin()}` /
-// `loginUrl={...}`): each call overwrites the cookie, so a stray render-phase
-// call would desync it from an in-flight login and the callback would reject it
-// with "invalid oauth state". It returns void by design, so there is no URL to
-// stash across renders.
+/**
+ * Start Google sign-in.
+ *
+ * Call it from an event handler at the moment you want to navigate, e.g.
+ * `onClick={() => startLogin()}` — never during render.
+ *
+ * The Worker owns the whole OAuth handshake now: `/api/oauth/login` mints the
+ * one-time CSRF nonce, sets its cookie and redirects to Google, and
+ * `/api/oauth/callback` sets the session cookie and sends the browser back to
+ * `returnTo`. The client no longer needs an app id or a portal URL.
+ */
 export const startLogin = (returnTo?: string) => {
-  if (returnTo) window.sessionStorage.setItem("medivista_post_login_path", returnTo);
-  const oauthPortalUrl = import.meta.env.VITE_OAUTH_PORTAL_URL;
-  const appId = import.meta.env.VITE_APP_ID;
-  const redirectUri = `${window.location.origin}/api/oauth/callback`;
+  const target = returnTo ?? `${window.location.pathname}${window.location.search}`;
 
-  const nonce = crypto.randomUUID();
-  document.cookie = `${OAUTH_STATE_COOKIE}=${nonce}; Path=/; Max-Age=600; SameSite=None; Secure`;
-  const state = encodeOAuthState({ redirectUri, nonce });
+  // App.tsx also restores this after the redirect, which covers the case where
+  // the callback lands on "/" (e.g. an expired state cookie).
+  try {
+    window.sessionStorage.setItem("medivista_post_login_path", target);
+  } catch {
+    // sessionStorage unavailable (private mode); the server redirect still works.
+  }
 
-  const url = new URL(`${oauthPortalUrl}/app-auth`);
-  url.searchParams.set("appId", appId);
-  url.searchParams.set("redirectUri", redirectUri);
-  url.searchParams.set("state", state);
-  url.searchParams.set("type", "signIn");
-
+  const url = new URL("/api/oauth/login", window.location.origin);
+  url.searchParams.set("returnTo", target);
   window.location.href = url.toString();
 };

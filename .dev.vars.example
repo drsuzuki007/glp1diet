@@ -1,0 +1,44 @@
+# ---------------------------------------------------------------------------
+# Local development secrets. Copy to `.dev.vars` and fill in real values.
+#   cp .dev.vars.example .dev.vars
+#
+# `.dev.vars` is read automatically by `vite dev` / `wrangler dev`.
+# In production set the same names with: wrangler secret put <NAME>
+# Non-secret values live in wrangler.jsonc under "vars".
+# ---------------------------------------------------------------------------
+
+# Session cookie signing key (HS256). Generate: openssl rand -base64 48
+JWT_SECRET=dev-only-insecure-secret-change-me
+
+# Google OAuth 2.0 client (https://console.cloud.google.com/apis/credentials)
+# Authorised redirect URI: <origin>/api/oauth/callback
+GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=your-client-secret
+
+# Site owner. Whoever signs in matching either of these becomes `admin`.
+# OWNER_EMAIL is the easy one — just your Google address.
+OWNER_EMAIL=drsuzuki007@gmail.com
+# Optional, equivalent: google:<google-subject-id>
+OWNER_OPEN_ID=
+
+# Vimeo（任意）。非公開動画のタイトル・サムネイルを管理画面で自動取得する場合のみ必要。
+# https://developer.vimeo.com/apps で発行し、スコープは private / video_files で足ります。
+VIMEO_ACCESS_TOKEN=
+
+# 埋め込みを許可するドメイン（カンマ区切り）。設定すると、動画登録時に Vimeo 側を
+# 「指定ドメインのみ埋め込み可」に自動で切り替えます。
+# 空のあいだは Vimeo の設定を触りません（localhost / workers.dev でも再生できる状態）。
+# glp1.diet への切り替えと同時に設定してください。
+#   例: VIMEO_EMBED_DOMAINS=glp1.diet,www.glp1.diet
+VIMEO_EMBED_DOMAINS=
+
+# Stripe (https://dashboard.stripe.com/apikeys)
+STRIPE_SECRET_KEY=sk_test_placeholder
+STRIPE_RESTRICTED_KEY=rk_test_placeholder
+STRIPE_WEBHOOK_SECRET=whsec_placeholder
+STRIPE_TEAM_WEBHOOK_SECRET=whsec_team_placeholder
+STRIPE_TEAM_PAYMENT_LINK_URL=https://buy.stripe.com/test_placeholder
+STRIPE_PRICE_ID=
+
+# Kept so the existing configuration-guard tests keep passing.
+VITE_APP_TITLE=glp1.diet

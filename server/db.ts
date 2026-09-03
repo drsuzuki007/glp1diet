@@ -1,5 +1,5 @@
-import { and, asc, desc, eq, gte, inArray, like, lte, or } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/mysql2";
+import { and, asc, desc, eq, gte, inArray, like, lte, ne, or, sql } from "drizzle-orm";
+import { getRequestDb, type Database } from "../worker/runtime";
 import { catalogRows, categories, courseCatalogRows, courseReferenceLinks, courses, doctors, InsertUser, learningActivities, learningGoals, subscriptions, users, viewingProgress, wishlists } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 import { ensureCatalogSeed } from "./seed";
@@ -11,18 +11,90 @@ import { getTeamForMember } from "./teams";
 
 export const SUBSCRIPTION_PRICE_YEN = 980;
 
-let _db: ReturnType<typeof drizzle> | null = null;
+/**
+ * The D1-backed drizzle handle for the current request.
+ *
+ * Returns null outside a request (unit tests, CLI scripts) so callers that can
+ * degrade gracefully keep the same behaviour as the old MySQL version when
+ * `DATABASE_URL` was unset. Use `readyDb()` when a database is required.
+ */
+export async function getDb(): Promise<Database | null> {
+  return getRequestDb();
+}
 
-export async function getDb() {
-  if (!_db && process.env.DATABASE_URL) {
-    try {
-      _db = drizzle(process.env.DATABASE_URL);
-    } catch (error) {
-      console.warn("[Database] Failed to connect:", error);
-      _db = null;
-    }
-  }
-  return _db;
+type BatchItem = Parameters<Database["batch"]>[0][number];
+
+/**
+ * D1 has no interactive transactions, so multi-statement writes go through
+ * `batch()`, which runs them atomically in order.
+ */
+async function runBatch(db: Database, statements: BatchItem[]) {
+  if (statements.length === 0) return;
+  await db.batch(statements as unknown as [BatchItem, ...BatchItem[]]);
+}
+
+/** The site owner may be identified by openId or, more conveniently, by email. */
+export function isOwner(openId: string | null | undefined, email?: string | null): boolean {
+  if (openId && ENV.ownerOpenId && openId === ENV.ownerOpenId) return true;
+  const ownerEmail = ENV.ownerEmail.trim().toLowerCase();
+  if (!ownerEmail || !email) return false;
+  return email.trim().toLowerCase() === ownerEmail;
+}
+
+export type LegacyUserRow = { id: number; openId: string };
+
+/**
+ * Decides which pre-migration row a freshly signed-in Google account should
+ * take over.
+ *
+ * Pure so it can be unit tested; `relinkLegacyOpenIdByEmail` does the I/O.
+ * The rule is deliberately conservative — it only acts when there is exactly
+ * one candidate, so an ambiguous match never merges two people's accounts.
+ */
+export function chooseLegacyRowToRelink(
+  rowsWithSameEmail: LegacyUserRow[],
+  newOpenId: string
+): LegacyUserRow | null {
+  // Already migrated (or the row is the new account itself): nothing to do.
+  if (rowsWithSameEmail.some(row => row.openId === newOpenId)) return null;
+  const legacy = rowsWithSameEmail.filter(row => !row.openId.startsWith("google:"));
+  return legacy.length === 1 ? legacy[0]! : null;
+}
+
+/**
+ * Data-migration bridge: adopt a pre-migration account by verified email.
+ *
+ * Before the Cloudflare migration `users.openId` held a Manus identifier; after
+ * it, Google's `google:<sub>`. On the first Google sign-in we look for a single
+ * legacy row with the same email and rewrite its `openId`, so the subscription,
+ * wishlist, progress and role all follow the person over without touching any
+ * other table.
+ *
+ * Returns true when a row was adopted. Only ever called with an email Google
+ * has marked verified (see worker/auth/routes.ts).
+ */
+export async function relinkLegacyOpenIdByEmail(
+  email: string,
+  newOpenId: string
+): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+
+  const normalized = email.trim().toLowerCase();
+  if (!normalized) return false;
+
+  const rows = await db
+    .select({ id: users.id, openId: users.openId })
+    .from(users)
+    .where(sql`lower(${users.email}) = ${normalized}`)
+    .limit(10);
+
+  const target = chooseLegacyRowToRelink(rows, newOpenId);
+  if (!target) return false;
+
+  await db.update(users).set({ openId: newOpenId }).where(eq(users.id, target.id));
+  console.log(`[Migration] Relinked user #${target.id} (${target.openId} -> ${newOpenId}) by email`);
+  return true;
 }
 
 export async function upsertUser(user: InsertUser): Promise<void> {
@@ -40,11 +112,11 @@ export async function upsertUser(user: InsertUser): Promise<void> {
   if (user.role !== undefined) {
     values.role = user.role;
     updateSet.role = user.role;
-  } else if (user.openId === ENV.ownerOpenId) {
+  } else if (isOwner(user.openId, user.email)) {
     values.role = "admin";
     updateSet.role = "admin";
   }
-  await db.insert(users).values(values).onDuplicateKeyUpdate({ set: updateSet });
+  await db.insert(users).values(values).onConflictDoUpdate({ target: users.openId, set: updateSet });
 }
 
 export async function getUserByOpenId(openId: string) {
@@ -137,12 +209,12 @@ async function readyDb() {
   return db;
 }
 
-async function subscriptionByUser(db: NonNullable<ReturnType<typeof drizzle>>, userId: number) {
+async function subscriptionByUser(db: Database, userId: number) {
   const result = await db.select().from(subscriptions).where(eq(subscriptions.userId, userId)).limit(1);
   return result[0] ?? null;
 }
 
-async function activeSubscription(db: NonNullable<ReturnType<typeof drizzle>>, userId: number) {
+async function activeSubscription(db: Database, userId: number) {
   const result = await db.select().from(subscriptions).where(and(eq(subscriptions.userId, userId), inArray(subscriptions.status, ["active", "trialing"]))).limit(1);
   return result[0] ?? null;
 }
@@ -195,7 +267,7 @@ export async function getCourseBySlug(slug: string) {
 
 export type CourseReferenceLinkInput = { label: string; url: string };
 
-async function getCourseReferenceLinks(courseId: number, dbOverride?: NonNullable<ReturnType<typeof drizzle>>) {
+async function getCourseReferenceLinks(courseId: number, dbOverride?: Database) {
   const db = dbOverride ?? await readyDb();
   return db.select({
     id: courseReferenceLinks.id,
@@ -211,17 +283,18 @@ export async function replaceCourseReferenceLinks(courseId: number, links: Cours
   const course = await db.select({ id: courses.id }).from(courses).where(eq(courses.id, courseId)).limit(1);
   if (!course[0]) throw new Error("講座が見つかりません。");
 
-  await db.transaction(async tx => {
-    await tx.delete(courseReferenceLinks).where(eq(courseReferenceLinks.courseId, courseId));
-    if (links.length > 0) {
-      await tx.insert(courseReferenceLinks).values(links.map((link, index) => ({
-        courseId,
-        label: link.label.trim(),
-        url: link.url,
-        sortOrder: index + 1,
-      })));
-    }
-  });
+  const statements: BatchItem[] = [
+    db.delete(courseReferenceLinks).where(eq(courseReferenceLinks.courseId, courseId)) as BatchItem,
+  ];
+  if (links.length > 0) {
+    statements.push(db.insert(courseReferenceLinks).values(links.map((link, index) => ({
+      courseId,
+      label: link.label.trim(),
+      url: link.url,
+      sortOrder: index + 1,
+    }))) as BatchItem);
+  }
+  await runBatch(db, statements);
   return getCourseReferenceLinks(courseId, db);
 }
 
@@ -261,10 +334,12 @@ export async function reorderStreamingCatalogRows(orderedRowIds: number[]) {
   const existingRows = await db.select({ id: catalogRows.id }).from(catalogRows).orderBy(asc(catalogRows.sortOrder));
   const existingIds = existingRows.map(row => row.id);
   if (orderedRowIds.length !== existingIds.length || new Set(orderedRowIds).size !== orderedRowIds.length || orderedRowIds.some(id => !existingIds.includes(id))) throw new Error("カタログ行の並び順が不正です。");
-  await db.transaction(async tx => {
-    for (let index = 0; index < orderedRowIds.length; index += 1) await tx.update(catalogRows).set({ sortOrder: index + 1000 }).where(eq(catalogRows.id, orderedRowIds[index]!));
-    for (let index = 0; index < orderedRowIds.length; index += 1) await tx.update(catalogRows).set({ sortOrder: index + 1 }).where(eq(catalogRows.id, orderedRowIds[index]!));
-  });
+  // Two passes: park every row in a spare range first so the unique sort order
+  // is never violated half-way through, then write the final positions.
+  const statements: BatchItem[] = [];
+  for (let index = 0; index < orderedRowIds.length; index += 1) statements.push(db.update(catalogRows).set({ sortOrder: index + 1000 }).where(eq(catalogRows.id, orderedRowIds[index]!)) as BatchItem);
+  for (let index = 0; index < orderedRowIds.length; index += 1) statements.push(db.update(catalogRows).set({ sortOrder: index + 1 }).where(eq(catalogRows.id, orderedRowIds[index]!)) as BatchItem);
+  await runBatch(db, statements);
   return getStreamingCatalogRows();
 }
 
@@ -278,10 +353,13 @@ export async function replaceStreamingCatalogRowCourses(rowId: number, orderedCo
   if (!row[0]) throw new Error("カタログ行が見つかりません。");
   const availableIds = new Set(availableCourses.map(course => course.id));
   if (orderedCourseIds.some(id => !availableIds.has(id))) throw new Error("指定された講座が見つかりません。");
-  await db.transaction(async tx => {
-    await tx.delete(courseCatalogRows).where(eq(courseCatalogRows.rowId, rowId));
-    if (orderedCourseIds.length > 0) await tx.insert(courseCatalogRows).values(orderedCourseIds.map((courseId, index) => ({ rowId, courseId, sortOrder: index + 1 })));
-  });
+  const statements: BatchItem[] = [
+    db.delete(courseCatalogRows).where(eq(courseCatalogRows.rowId, rowId)) as BatchItem,
+  ];
+  if (orderedCourseIds.length > 0) {
+    statements.push(db.insert(courseCatalogRows).values(orderedCourseIds.map((courseId, index) => ({ rowId, courseId, sortOrder: index + 1 }))) as BatchItem);
+  }
+  await runBatch(db, statements);
   return getStreamingCatalogRows();
 }
 
@@ -328,16 +406,123 @@ export async function reorderLearningGoals(userId: number, orderedGoals: Learnin
   return getLearningGoals(userId);
 }
 
+/**
+ * 視聴できる人にだけ動画の再生情報を渡すための判定。
+ *
+ * 非会員のレスポンスに Vimeo の ID が混ざらないよう、ここで必ず絞る。純粋関数なので
+ * テストで固定できる（server/vimeoEntitlement.test.ts）。
+ */
+export function entitledVideo(
+  subscribed: boolean,
+  course: { vimeoId: string | null; vimeoHash: string | null } | undefined
+): { vimeoId: string | null; vimeoHash: string | null } {
+  if (!subscribed || !course?.vimeoId) return { vimeoId: null, vimeoHash: null };
+  return { vimeoId: course.vimeoId, vimeoHash: course.vimeoHash ?? null };
+}
+
 export async function getCourseActions(userId: number, courseId: number) {
   const db = await readyDb();
-  const [wishlistRows, subscription, progressRows, team] = await Promise.all([
+  const [wishlistRows, subscription, progressRows, team, courseRows] = await Promise.all([
     db.select().from(wishlists).where(and(eq(wishlists.userId, userId), eq(wishlists.courseId, courseId))).limit(1),
     subscriptionByUser(db, userId),
     db.select().from(viewingProgress).where(and(eq(viewingProgress.userId, userId), eq(viewingProgress.courseId, courseId))).limit(1),
     getTeamForMember(userId),
+    db.select({ vimeoId: courses.vimeoId, vimeoHash: courses.vimeoHash }).from(courses).where(eq(courses.id, courseId)).limit(1),
   ]);
   const individualAccess = subscriptionAccessState(subscription);
-  return { wishlisted: wishlistRows.length > 0, ...individualAccess, subscribed: individualAccess.subscribed || Boolean(team), monthlyPrice: SUBSCRIPTION_PRICE_YEN, progress: progressRows[0] ?? null, team };
+  const subscribed = individualAccess.subscribed || Boolean(team);
+  return {
+    wishlisted: wishlistRows.length > 0,
+    ...individualAccess,
+    subscribed,
+    monthlyPrice: SUBSCRIPTION_PRICE_YEN,
+    progress: progressRows[0] ?? null,
+    team,
+    // 講座ページのプレーヤーはこの値だけを見る。非会員には null が返る。
+    ...entitledVideo(subscribed, courseRows[0]),
+  };
+}
+
+/** 管理画面用: 講座に Vimeo 動画を割り当てる。 */
+export async function setCourseVideo(input: {
+  courseId: number;
+  vimeoId: string;
+  vimeoHash: string | null;
+  durationMinutes?: number | null;
+}) {
+  const db = await readyDb();
+  const course = await db.select({ id: courses.id }).from(courses).where(eq(courses.id, input.courseId)).limit(1);
+  if (!course[0]) throw new Error("講座が見つかりません。");
+
+  const duplicate = await db
+    .select({ id: courses.id, title: courses.title })
+    .from(courses)
+    .where(and(eq(courses.vimeoId, input.vimeoId), ne(courses.id, input.courseId)))
+    .limit(1);
+  if (duplicate[0]) {
+    throw new Error(`この動画はすでに「${duplicate[0].title}」に登録されています。`);
+  }
+
+  const values: Record<string, unknown> = { vimeoId: input.vimeoId, vimeoHash: input.vimeoHash };
+  if (input.durationMinutes) values.durationMinutes = input.durationMinutes;
+  await db.update(courses).set(values).where(eq(courses.id, input.courseId));
+
+  return getCourseAdminSummary(input.courseId);
+}
+
+/** 管理画面用: 割り当てを解除する。 */
+export async function clearCourseVideo(courseId: number) {
+  const db = await readyDb();
+  await db.update(courses).set({ vimeoId: null, vimeoHash: null }).where(eq(courses.id, courseId));
+  return getCourseAdminSummary(courseId);
+}
+
+async function getCourseAdminSummary(courseId: number) {
+  const db = await readyDb();
+  const rows = await db
+    .select({ id: courses.id, slug: courses.slug, title: courses.title, durationMinutes: courses.durationMinutes, vimeoId: courses.vimeoId, vimeoHash: courses.vimeoHash })
+    .from(courses)
+    .where(eq(courses.id, courseId))
+    .limit(1);
+  return rows[0]!;
+}
+
+/** 管理画面用の講座一覧。動画の割り当て状況を含む。 */
+export async function listCoursesForVideoAdmin() {
+  const db = await readyDb();
+  return db
+    .select({
+      id: courses.id,
+      slug: courses.slug,
+      title: courses.title,
+      durationMinutes: courses.durationMinutes,
+      vimeoId: courses.vimeoId,
+      vimeoHash: courses.vimeoHash,
+      publishedAt: courses.publishedAt,
+    })
+    .from(courses)
+    .orderBy(desc(courses.publishedAt));
+}
+
+export const NEW_ARRIVALS_ROW_SLUG = "new-releases";
+
+/**
+ * 講座を「新着動画」棚の先頭へ移動する。すでに棚にある場合は先頭へ繰り上げる。
+ * 棚が存在しない環境（シード前）では何もしない。
+ */
+export async function moveCourseToNewArrivalsTop(courseId: number) {
+  const db = await readyDb();
+  const row = await db.select({ id: catalogRows.id }).from(catalogRows).where(eq(catalogRows.slug, NEW_ARRIVALS_ROW_SLUG)).limit(1);
+  if (!row[0]) return null;
+
+  const current = await db
+    .select({ courseId: courseCatalogRows.courseId })
+    .from(courseCatalogRows)
+    .where(eq(courseCatalogRows.rowId, row[0].id))
+    .orderBy(asc(courseCatalogRows.sortOrder));
+
+  const ordered = [courseId, ...current.map(item => item.courseId).filter(id => id !== courseId)];
+  return replaceStreamingCatalogRowCourses(row[0].id, ordered);
 }
 
 export async function toggleWishlist(userId: number, courseId: number) {

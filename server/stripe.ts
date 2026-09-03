@@ -4,10 +4,40 @@ import { getSubscriptionStatus, getUserById, getUserByStripeCustomerId, setStrip
 import { getTeamAdminDashboard, syncTeamSubscription, upsertTeamFromStripe } from "./teams";
 import type { StripeSubscriptionStatus } from "../shared/subscription";
 
-const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
-if (!stripeSecretKey) throw new Error("STRIPE_SECRET_KEY is required for Stripe billing.");
+import { ENV } from "./_core/env";
 
-export const stripe = new Stripe(stripeSecretKey);
+/**
+ * Stripe on Workers.
+ *
+ * The client must be built per request (the secret comes from the request's
+ * bindings) and must use fetch + WebCrypto instead of Node's http/crypto.
+ * `stripe` stays a module-level export so every existing call site is unchanged;
+ * the proxy resolves the real client on first property access.
+ */
+let stripeClient: Stripe | null = null;
+let stripeClientKey: string | null = null;
+
+export function getStripeClient(): Stripe {
+  const secretKey = ENV.stripeSecretKey;
+  if (!secretKey) {
+    throw new Error(
+      "STRIPE_SECRET_KEY is not configured. Set it in .dev.vars (local) or `wrangler secret put STRIPE_SECRET_KEY`."
+    );
+  }
+  if (!stripeClient || stripeClientKey !== secretKey) {
+    stripeClient = new Stripe(secretKey, {
+      httpClient: Stripe.createFetchHttpClient(),
+    });
+    stripeClientKey = secretKey;
+  }
+  return stripeClient;
+}
+
+export const stripe: Stripe = new Proxy({} as Stripe, {
+  get(_target, property, receiver) {
+    return Reflect.get(getStripeClient() as object, property, receiver);
+  },
+});
 
 function originFromRequest(origin: string | undefined) {
   if (!origin) throw new Error("決済ページの送信元を確認できませんでした。再度お試しください。");

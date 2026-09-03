@@ -17,7 +17,6 @@ export type CourseDetail = CourseSummary & {
   description: string;
   intendedFor: string;
   learningPoints: string;
-  vimeoId: string | null;
   referencesText: string;
   referenceLinks: CourseReferenceLink[];
   coiText: string;

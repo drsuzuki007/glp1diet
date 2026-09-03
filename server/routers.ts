@@ -2,9 +2,14 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
+import { ENV } from "./_core/env";
 import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import {
+  clearCourseVideo,
+  listCoursesForVideoAdmin,
+  moveCourseToNewArrivalsTop,
+  setCourseVideo,
   getCatalogFilters,
   getCourseActions,
   getCourseBySlug,
@@ -26,6 +31,7 @@ import {
 } from "./db";
 import { createBillingPortal, createSubscriptionCheckout, createTeamBillingPortal, getStripeBillingSummary, refreshStripeSubscription, scheduleStripeSubscriptionCancellation } from "./stripe";
 import { getTeamAdminDashboard, getTeamForMember, joinTeamWithAccessCode, removeTeamMemberByAdmin } from "./teams";
+import { configuredEmbedDomains, durationToMinutes, fetchVimeoMetadata, readEmbedPrivacy, releaseEmbedRestriction, restrictEmbedToDomains } from "./vimeo";
 
 export const courseFilterSchema = z.object({
   search: z.string().trim().max(120).optional(),
@@ -46,6 +52,8 @@ export const courseReferenceLinksSchema = z.array(courseReferenceLinkSchema).max
     ctx.addIssue({ code: "custom", message: "同じURLは重複して登録できません。" });
   }
 });
+
+export const vimeoUrlSchema = z.string().trim().min(1, "Vimeo の URL を入力してください。").max(300);
 
 export const catalogRowOrderSchema = z.array(z.number().int().positive()).min(1);
 export const catalogRowCoursesSchema = z.object({ rowId: z.number().int().positive(), courseIds: z.array(z.number().int().positive()).max(200) });
@@ -79,6 +87,105 @@ export const appRouter = router({
       return course;
     }),
     updateReferenceLinks: adminProcedure.input(z.object({ courseId: z.number().int().positive(), links: courseReferenceLinksSchema })).mutation(({ input }) => replaceCourseReferenceLinks(input.courseId, input.links)),
+    // --- 動画（Vimeo）の管理 ------------------------------------------------
+    /** 管理画面用の一覧。どの講座に動画が割り当て済みかを返す。 */
+    videoLibrary: adminProcedure.query(() => listCoursesForVideoAdmin()),
+    /** URL を貼り付けた時点でタイトル・サムネイル・再生時間を引いてくる（保存はしない）。 */
+    resolveVimeo: adminProcedure.input(z.object({ url: vimeoUrlSchema })).mutation(async ({ input }) => {
+      try {
+        return await fetchVimeoMetadata(input.url);
+      } catch (error) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "動画情報を取得できませんでした。" });
+      }
+    }),
+    /** 講座に動画を割り当てる。既定で新着動画枠の先頭へ繰り上げる。 */
+    assignVimeo: adminProcedure
+      .input(z.object({
+        courseId: z.number().int().positive(),
+        url: vimeoUrlSchema,
+        addToNewArrivals: z.boolean().default(true),
+      }))
+      .mutation(async ({ input }) => {
+        let metadata;
+        try {
+          metadata = await fetchVimeoMetadata(input.url);
+        } catch (error) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "動画情報を取得できませんでした。" });
+        }
+        try {
+          const course = await setCourseVideo({
+            courseId: input.courseId,
+            vimeoId: metadata.id,
+            vimeoHash: metadata.hash,
+            durationMinutes: durationToMinutes(metadata.durationSeconds),
+          });
+          if (input.addToNewArrivals) await moveCourseToNewArrivalsTop(input.courseId);
+          // VIMEO_EMBED_DOMAINS が設定されていれば、Vimeo 側を「指定ドメインのみ埋め込み可」に切り替える。
+          // 失敗しても登録自体は成立させ、結果を返して管理画面に表示する。
+          const embedRestriction = await restrictEmbedToDomains(metadata.id);
+          return { course, metadata, embedRestriction, embedDomains: configuredEmbedDomains() };
+        } catch (error) {
+          throw new TRPCError({ code: "CONFLICT", message: error instanceof Error ? error.message : "動画を登録できませんでした。" });
+        }
+      }),
+    /** 割り当てを解除する。 */
+    clearVimeo: adminProcedure.input(z.object({ courseId: z.number().int().positive() })).mutation(({ input }) => clearCourseVideo(input.courseId)),
+    // --- 埋め込みドメイン制限 ------------------------------------------------
+    /** 現在の設定値と、登録済み動画それぞれの Vimeo 側の状態を読む（変更はしない）。 */
+    embedRestrictionStatus: adminProcedure.query(async () => {
+      const domains = configuredEmbedDomains();
+      const courses = (await listCoursesForVideoAdmin()).filter(course => course.vimeoId);
+      const videos = await Promise.all(
+        courses.map(async course => {
+          try {
+            return { courseId: course.id, courseTitle: course.title, ...(await readEmbedPrivacy(course.vimeoId!)), error: null as string | null };
+          } catch (error) {
+            return {
+              courseId: course.id,
+              courseTitle: course.title,
+              vimeoId: course.vimeoId!,
+              title: "",
+              embed: "unknown",
+              domains: [] as string[],
+              error: error instanceof Error ? error.message : String(error),
+            };
+          }
+        })
+      );
+      return { domains, videos };
+    }),
+    /**
+     * 登録済み動画に埋め込みドメイン制限を適用する。
+     * courseId を省略すると全件に適用する。VIMEO_EMBED_DOMAINS が空なら何もしない。
+     */
+    applyEmbedRestriction: adminProcedure
+      .input(z.object({ courseId: z.number().int().positive().optional() }).optional())
+      .mutation(async ({ input }) => {
+        const domains = configuredEmbedDomains();
+        if (domains.length === 0) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "VIMEO_EMBED_DOMAINS が未設定です。許可するドメインを設定してから実行してください。",
+          });
+        }
+        const all = (await listCoursesForVideoAdmin()).filter(course => course.vimeoId);
+        const targets = input?.courseId ? all.filter(course => course.id === input.courseId) : all;
+        const results = await Promise.all(
+          targets.map(async course => ({ courseTitle: course.title, ...(await restrictEmbedToDomains(course.vimeoId!, domains)) }))
+        );
+        return { domains, results };
+      }),
+    /** 制限を解除して、どこでも埋め込める状態に戻す（切り戻し用）。 */
+    releaseEmbedRestriction: adminProcedure
+      .input(z.object({ courseId: z.number().int().positive().optional() }).optional())
+      .mutation(async ({ input }) => {
+        const all = (await listCoursesForVideoAdmin()).filter(course => course.vimeoId);
+        const targets = input?.courseId ? all.filter(course => course.id === input.courseId) : all;
+        const results = await Promise.all(
+          targets.map(async course => ({ courseTitle: course.title, ...(await releaseEmbedRestriction(course.vimeoId!)) }))
+        );
+        return { results };
+      }),
     actions: protectedProcedure.input(z.object({ courseId: z.number().int().positive() })).query(({ ctx, input }) => getCourseActions(ctx.user.id, input.courseId)),
     toggleWishlist: protectedProcedure.input(z.object({ courseId: z.number().int().positive() })).mutation(({ ctx, input }) => toggleWishlist(ctx.user.id, input.courseId)),
     updateProgress: protectedProcedure.input(z.object({ courseId: z.number().int().positive(), progressPercent: z.number().min(0).max(100), lastPositionSeconds: z.number().int().min(0) })).mutation(({ ctx, input }) => updateCourseProgress(ctx.user.id, input.courseId, input.progressPercent, input.lastPositionSeconds)),
@@ -92,7 +199,7 @@ export const appRouter = router({
     scheduleCancellation: protectedProcedure.mutation(({ ctx }) => scheduleStripeSubscriptionCancellation({ userId: ctx.user.id })),
   }),
   team: router({
-    paymentLink: publicProcedure.query(() => ({ url: process.env.STRIPE_TEAM_PAYMENT_LINK_URL ?? null })),
+    paymentLink: publicProcedure.query(() => ({ url: ENV.stripeTeamPaymentLinkUrl })),
     mine: protectedProcedure.query(({ ctx }) => getTeamForMember(ctx.user.id)),
     join: protectedProcedure.input(teamAccessCodeSchema).mutation(({ ctx, input }) => joinTeamWithAccessCode(ctx.user.id, input)),
     admin: protectedProcedure.query(({ ctx }) => getTeamAdminDashboard(ctx.user.id)),

@@ -1,0 +1,51 @@
+/**
+ * Cloudflare Worker configuration for glp1.diet
+ *
+ * - `main`   : the Worker entry point (API + SEO HTML injection + SPA fallback)
+ * - `assets` : the built React client. The Cloudflare Vite plugin fills in the
+ *              directory at build time, so it is intentionally not set here.
+ *
+ * Secrets are NOT stored here. Local dev reads `.dev.vars`; production uses
+ * `wrangler secret put <NAME>`. See docs/MIGRATION.md.
+ */
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "glp1diet",
+  "main": "./worker/index.ts",
+  "compatibility_date": "2025-08-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    // Every request goes to the Worker first EXCEPT the hashed build output.
+    // Without this, static-asset matching (and the SPA fallback) would answer
+    // "/", "/pricing", "/api/oauth/login" … with the raw index.html and the
+    // Worker would never run — the SEO placeholders would leak out unreplaced
+    // and the API routes would return HTML.
+    "run_worker_first": ["/*", "!/assets/*"]
+  },
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    // Public, non-secret configuration. Override per environment.
+    "APP_ORIGIN": "http://localhost:5173",
+    "VITE_APP_TITLE": "glp1.diet"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "glp1diet-db",
+      "database_id": "e7df5a5d-2346-4423-ba91-e7edb5a35d89",
+      "migrations_dir": "drizzle/migrations"
+    }
+  ],
+  // R2 はまだアカウントで有効化されていないため無効にしてある。
+  // 有効化の手順:
+  //   1. https://dash.cloudflare.com → R2 → 「R2 を有効にする」
+  //   2. npx wrangler r2 bucket create glp1diet-media
+  //   3. 下の 3 行のコメントを外して npm run deploy
+  // この状態では /manus-storage/* が 501 を返す（講座のプレビュー動画が再生されない）だけで、
+  // ログイン・講座一覧・視聴履歴などその他の機能はすべて動く。
+  "r2_buckets": []
+}
